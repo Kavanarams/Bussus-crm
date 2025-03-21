@@ -9,6 +9,9 @@ class DataProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   ApiResponse? _currentResponse;
+  String? _currentListViewId;// Store current list view ID
+  String _token = '';
+  String _type = '';
 
   // Filter and sort state
   Map<String, dynamic> _activeFilters = {};
@@ -24,6 +27,7 @@ class DataProvider with ChangeNotifier {
   ApiResponse? get currentResponse => _currentResponse;
   List<ColumnInfo> get allColumns => _currentResponse?.allColumns ?? [];
   List<String> get visibleColumns => _currentResponse?.visibleColumns ?? [];
+  String? get currentListViewId => _currentListViewId;
 
   // Getters for filter and sort state
   Map<String, dynamic> get activeFilters => _activeFilters;
@@ -32,6 +36,8 @@ class DataProvider with ChangeNotifier {
 
   // Updated to require token as a parameter
   Future<void> loadData(String type, String token) async {
+    _token = token;
+    _type = type;
     String endpoint = 'http://88.222.241.78/v2/api/listview/$type';
     await fetchData(endpoint, token);
 
@@ -105,6 +111,9 @@ class DataProvider with ChangeNotifier {
         final Map<String, dynamic> responseData = json.decode(response.body);
         final ApiResponse apiResponse = ApiResponse.fromJson(responseData);
 
+        // Store the list view ID for future filter requests
+        _currentListViewId = apiResponse.listview.id;
+
         _items = apiResponse.data;
         _filteredItems = [];
         _currentResponse = apiResponse;
@@ -117,6 +126,7 @@ class DataProvider with ChangeNotifier {
         print('📊 Loaded ${_items.length} items');
         print('📊 Visible columns: ${apiResponse.visibleColumns}');
         print('📊 All columns count: ${apiResponse.allColumns.length}');
+        print('📊 ListView ID: ${_currentListViewId}');
       } else if (response.statusCode == 401) {
         _error = 'Authentication expired. Please log in again.';
         _items = [];
@@ -138,24 +148,154 @@ class DataProvider with ChangeNotifier {
     }
   }
 
-  // Apply filter based on column name and value
-  void applyFilter(String column, dynamic value) {
-    if (value == null || value.toString().isEmpty) {
-      _activeFilters.remove(column);
+  Future<void> applyFilter(String field, String? value) async {
+    Map<String, String> filters = {};
+    if (value != null) {
+      filters[field] = value;
     } else {
-      _activeFilters[column] = value;
+      filters[field] = '';  // Use empty string instead of null
     }
 
-    _applyFiltersAndSort();
+    await applyFilters(filters, _token, _type);
   }
 
-  // Clear all filters
-  void clearFilters() {
-    _activeFilters = {};
-    _filteredItems = [];
-    notifyListeners();
+  // Updated to use remote API filtering with improved notification
+  Future<void> applyFilters(Map<String, String> filters, String token, String type) async {
+    if (_currentListViewId == null) {
+      print('❌ Cannot apply filters: No list view ID available');
+      return;
+    }
+
+    _isLoading = true;
+    _activeFilters = Map<String, dynamic>.from(filters);
+    notifyListeners(); // First notification - loading state
+
+    try {
+      // Create filter payload as per the API requirement
+      List<Map<String, dynamic>> filtersList = [];
+
+      filters.forEach((field, value) {
+        if (value.isNotEmpty) {
+          filtersList.add({
+            'field': field,
+            'value': value,
+            'operator': 'equals'
+          });
+        }
+      });
+
+      final Map<String, dynamic> payload = {
+        'data': {
+          'filters': filtersList,
+          'filter_logic': '',
+          'id': _currentListViewId
+        }
+      };
+
+      print('🔍 Applying remote filters: ${json.encode(payload)}');
+
+      String endpoint = 'http://88.222.241.78/v2/api/listview';
+
+      final response = await http.patch(
+        Uri.parse(endpoint),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(payload),
+      );
+
+      print('📤 Filter response status code: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        final ApiResponse apiResponse = ApiResponse.fromJson(responseData);
+
+        // Update data
+        _items = apiResponse.data;
+        _filteredItems = _items;
+        _currentResponse = apiResponse;
+        _error = null;
+
+        print('📊 Filtered items count: ${_items.length}');
+      } else {
+        print('❌ Failed to apply filters. Status code: ${response.statusCode}');
+        print('❌ Response body: ${response.body}');
+        _error = 'Failed to apply filters. Status code: ${response.statusCode}';
+      }
+    } catch (e) {
+      _error = 'Error occurred while filtering: $e';
+      print('❌ Error applying filters: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners(); // Second notification after operation is complete
+    }
   }
 
+  Future<void> _clearFiltersInternal(String token, String type) async {
+    _isLoading = true;
+    notifyListeners(); // First notification - loading state
+
+    try {
+      // Reset local state
+      _activeFilters = {};
+      _filteredItems = [];
+
+      // Need to explicitly clear filters on the server
+      if (_currentListViewId != null) {
+        String endpoint = 'http://88.222.241.78/v2/api/listview';
+
+        // Create empty filter payload
+        final Map<String, dynamic> payload = {
+          'data': {
+            'filters': [],
+            'filter_logic': '',
+            'id': _currentListViewId
+          }
+        };
+
+        print('🔍 Clearing filters on server for listview: $_currentListViewId');
+
+        final response = await http.patch(
+          Uri.parse(endpoint),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: json.encode(payload),
+        );
+
+        print('📤 Clear filter response status code: ${response.statusCode}');
+
+        if (response.statusCode == 200) {
+          final Map<String, dynamic> responseData = json.decode(response.body);
+          final ApiResponse apiResponse = ApiResponse.fromJson(responseData);
+
+          _items = apiResponse.data;
+          _currentResponse = apiResponse;
+          _error = null;
+
+          print('📊 Cleared filters - items count: ${_items.length}');
+        } else {
+          _error = 'Failed to clear filters. Status code: ${response.statusCode}';
+        }
+      } else {
+        // If no listview ID, just reload data
+        await loadData(type, token);
+      }
+    } catch (e) {
+      _error = 'Error occurred while clearing filters: $e';
+      print('❌ Error clearing filters: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners(); // Final notification after operation completes
+    }
+  }
+
+  // Clear all filters - now needs to reload data from server
+  Future<void> clearFilters() async {
+    await _clearFiltersInternal(_token, _type);
+  }
   // Apply sorting based on column
   void applySort(String column) {
     // If same column, toggle direction
@@ -166,37 +306,20 @@ class DataProvider with ChangeNotifier {
       _sortAscending = true;
     }
 
-    _applyFiltersAndSort();
+    _applySorting();
   }
 
   // Clear sorting
   void clearSort() {
     _sortColumn = null;
-    _applyFiltersAndSort();
+    _applySorting();
   }
 
-  // Apply both filters and sorting
-  void _applyFiltersAndSort() {
-    List<DynamicModel> result = List.from(_items);
+  // Apply sorting only (keep separate from filtering now)
+  void _applySorting() {
+    List<DynamicModel> result = List.from(_filteredItems.isEmpty ? _items : _filteredItems);
 
-    // Apply filters first
-    if (_activeFilters.isNotEmpty) {
-      result = result.where((item) {
-        bool passes = true;
-        for (var entry in _activeFilters.entries) {
-          final columnValue = item.getStringAttribute(entry.key).toLowerCase();
-          final filterValue = entry.value.toString().toLowerCase();
-
-          if (!columnValue.contains(filterValue)) {
-            passes = false;
-            break;
-          }
-        }
-        return passes;
-      }).toList();
-    }
-
-    // Then apply sorting
+    // Apply sorting
     if (_sortColumn == null) {
       // Sort by creation date if no explicit sort column
       result.sort((a, b) {
@@ -215,7 +338,7 @@ class DataProvider with ChangeNotifier {
         return 0;
       });
     } else {
-      // Your existing sorting code for other columns
+      // Sort by selected column
       result.sort((a, b) {
         String valA = a.getStringAttribute(_sortColumn!).toLowerCase();
         String valB = b.getStringAttribute(_sortColumn!).toLowerCase();
@@ -233,7 +356,12 @@ class DataProvider with ChangeNotifier {
       });
     }
 
-    _filteredItems = result;
+    // Update filtered items if we had filtered results
+    if (_filteredItems.isNotEmpty) {
+      _filteredItems = result;
+    } else {
+      _items = result;
+    }
     notifyListeners();
   }
 
@@ -253,7 +381,7 @@ class DataProvider with ChangeNotifier {
     return result;
   }
 
-  // Modified createItem method to ensure new items show at the top
+  // Rest of the methods (createItem, updateItem) remain unchanged
   Future<Map<String, dynamic>> createItem(String type, Map<String, dynamic> formData, String token) async {
     String endpoint = 'http://88.222.241.78/v2/api/$type';
     _isLoading = true;
@@ -305,7 +433,7 @@ class DataProvider with ChangeNotifier {
 
             // Update filtered items if necessary
             if (_filteredItems.isNotEmpty) {
-              _applyFiltersAndSort();
+              _applySorting();
             }
 
             notifyListeners();
@@ -343,7 +471,6 @@ class DataProvider with ChangeNotifier {
     }
   }
 
-  // Modified updateItem method to ensure updated items show at the correct position
   Future<Map<String, dynamic>> updateItem(String type, String itemId, Map<String, dynamic> formData, String token) async {
     String endpoint = 'http://88.222.241.78/v2/api/$type/$itemId';
     _isLoading = true;
@@ -396,7 +523,7 @@ class DataProvider with ChangeNotifier {
 
               // Update filtered items if necessary
               if (_filteredItems.isNotEmpty) {
-                _applyFiltersAndSort();
+                _applySorting();
               }
 
               notifyListeners();
@@ -434,4 +561,56 @@ class DataProvider with ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<bool> forceRefreshData(String token, String type) async {
+    if (_currentListViewId == null) {
+      print('Cannot refresh: No list view ID available');
+      return false;
+    }
+
+    _isLoading = true;
+    notifyListeners(); // Notify loading state
+
+    try {
+      // Direct API call to get fresh data
+      final response = await http.get(
+        Uri.parse('http://88.222.241.78/v2/api/listview/${_currentListViewId}'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      print('🔄 Refresh response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        final ApiResponse apiResponse = ApiResponse.fromJson(responseData);
+
+        // Update all data properties
+        _items = apiResponse.data;
+        _filteredItems = _items;
+        _currentResponse = apiResponse;
+        _error = null;
+
+        print('🔄 Forced refresh complete - items: ${_items.length}');
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = 'Failed to refresh data. Status code: ${response.statusCode}';
+        print('❌ Failed to refresh: ${response.statusCode}');
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = 'Error refreshing data: $e';
+      print('❌ Error refreshing: $e');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
 }

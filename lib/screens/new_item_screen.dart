@@ -78,6 +78,14 @@ class _NewItemScreenState extends State<NewItemScreen> {
       // Create text controllers for all fields
       for (var column in allColumns) {
         _controllers[column.name] = TextEditingController();
+
+        // Set default values for date fields
+        if ((column.name == 'created_date' || column.datatype.toLowerCase() == 'date') && column.name != 'last_modified_date') {
+          // Set current date for created_date and other date fields (except last_modified)
+          final now = DateTime.now();
+          final formattedDate = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+          _controllers[column.name]!.text = formattedDate;
+        }
       }
 
       // Pre-process all dropdown options
@@ -184,6 +192,18 @@ class _NewItemScreenState extends State<NewItemScreen> {
 
       // Add text field values
       _controllers.forEach((key, controller) {
+        // Special handling for date fields
+        if ((key == "created_date" || key == "last_modified_date" ||
+            _requiredFields.any((col) => col.name == key && col.datatype.toLowerCase() == 'date') ||
+            _optionalFields.any((col) => col.name == key && col.datatype.toLowerCase() == 'date'))) {
+
+          // Only include non-empty date values
+          if (controller.text.isNotEmpty) {
+            // You might need to convert the date format based on your API requirements
+            // Example: convert YYYY-MM-DD to MM/DD/YYYY or to ISO format
+            formData[key] = controller.text; // Use as is, or convert if needed
+          }
+        }
         // Special handling for phone field
         if (key == "phone") {
           // Only include non-empty phone values
@@ -385,6 +405,12 @@ class _NewItemScreenState extends State<NewItemScreen> {
   }
 
   Widget _buildField(ColumnInfo column, bool isRequired) {
+    // Check if this is a date field
+    if (column.datatype.toLowerCase() == 'date' ||
+        column.name == 'created_date' ||
+        column.name == 'last_modified_date') {
+      return _buildDateField(column, isRequired);
+    }
     // If this is a dropdown field
     if (_hasDropdownValues(column)) {
       // Get the dropdown options from cache
@@ -398,6 +424,44 @@ class _NewItemScreenState extends State<NewItemScreen> {
 
     // Default to text field for non-dropdown fields or empty dropdowns
     return _buildTextField(column, isRequired);
+  }
+  Widget _buildDateField(ColumnInfo column, bool isRequired) {
+    final controller = _controllers[column.name] ?? TextEditingController();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: TextFormField(
+        controller: controller,
+        decoration: _inputDecoration(column.label, isRequired).copyWith(
+          suffixIcon: Icon(Icons.calendar_today),
+        ),
+        readOnly: true, // Prevents keyboard from appearing
+        onTap: () async {
+          // Show date picker
+          final DateTime? pickedDate = await showDatePicker(
+            context: context,
+            initialDate: DateTime.now(),
+            firstDate: DateTime(2000),
+            lastDate: DateTime(2101),
+          );
+
+          if (pickedDate != null) {
+            // Format the date as you need
+            final String formattedDate = "${pickedDate.year}-${pickedDate.month.toString().padLeft(2, '0')}-${pickedDate.day.toString().padLeft(2, '0')}";
+
+            setState(() {
+              controller.text = formattedDate;
+            });
+          }
+        },
+        validator: isRequired ? (value) {
+          if (value == null || value.isEmpty) {
+            return 'Please select ${column.label}';
+          }
+          return null;
+        } : null,
+      ),
+    );
   }
 
   Widget _buildDropdownField(ColumnInfo column, List<String> options, bool isRequired) {

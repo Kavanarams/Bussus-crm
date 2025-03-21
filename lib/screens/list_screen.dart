@@ -56,19 +56,73 @@ class _ListScreenState extends State<ListScreen> {
   }
 
   // Show filter dialog
-  void _showFilterDialog(BuildContext context, DataProvider dataProvider) {
-    // Create controllers for each field if they don't exist
+  void _showNewFilterDialog(BuildContext context) {
+    final dataProvider = Provider.of<DataProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    // Initialize controllers with current filter values
+    Map<String, TextEditingController> controllers = {};
     for (var column in dataProvider.visibleColumns) {
-      if (!_filterControllers.containsKey(column)) {
-        _filterControllers[column] = TextEditingController(
-          text: dataProvider.activeFilters[column]?.toString() ?? '',
-        );
+      controllers[column] = TextEditingController(
+        text: dataProvider.activeFilters[column]?.toString() ?? '',
+      );
+    }
+
+    // Track if a loading dialog is currently showing
+    bool isLoadingDialogShowing = false;
+
+    // Function to safely show the loading dialog
+    void showLoadingDialog(String message) {
+      if (isLoadingDialogShowing) return;
+
+      isLoadingDialogShowing = true;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 20),
+                Text(message)
+              ],
+            ),
+          );
+        },
+      );
+    }
+
+    // Function to safely close the loading dialog
+    void hideLoadingDialog() {
+      if (isLoadingDialogShowing && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+        isLoadingDialogShowing = false;
       }
+    }
+
+    // Function to show error dialog
+    void showErrorDialog(String message) {
+      showDialog(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: Text('Error'),
+            content: Text(message),
+            actions: [
+              TextButton(
+                child: Text('OK'),
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              )
+            ],
+          );
+        },
+      );
     }
 
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
           title: Text('Filter ${widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)}'),
           content: Container(
@@ -84,11 +138,10 @@ class _ListScreenState extends State<ListScreen> {
                     break;
                   }
                 }
-
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: TextField(
-                    controller: _filterControllers[column],
+                    controller: controllers[column],
                     decoration: InputDecoration(
                       labelText: label,
                       hintText: 'Filter by $label',
@@ -103,21 +156,74 @@ class _ListScreenState extends State<ListScreen> {
             TextButton(
               child: Text('Clear All'),
               onPressed: () {
-                _filterControllers.forEach((key, controller) {
+                // Clear controllers
+                controllers.forEach((key, controller) {
                   controller.clear();
                 });
-                dataProvider.clearFilters();
-                Navigator.of(context).pop();
+
+                // Close the filter dialog
+                Navigator.of(dialogContext).pop();
+
+                // Using Future.microtask to ensure the dialog is fully closed
+                Future.microtask(() async {
+                  try {
+                    showLoadingDialog("Clearing filters...");
+
+                    // 1. Clear filters
+                    await dataProvider.clearFilters();
+
+                    // 2. Load the data again directly
+                    await dataProvider.loadData(widget.type, authProvider.token);
+
+                    hideLoadingDialog();
+
+                    // 3. Force UI rebuild
+                    setState(() {});
+                  } catch (e) {
+                    hideLoadingDialog();
+                    showErrorDialog('Failed to clear filters: $e');
+                  }
+                });
               },
             ),
             TextButton(
               child: Text('Apply'),
               onPressed: () {
-                // Apply filters
-                for (var entry in _filterControllers.entries) {
-                  dataProvider.applyFilter(entry.key, entry.value.text);
+                // Collect non-empty filter values
+                Map<String, String> filters = {};
+                for (var entry in controllers.entries) {
+                  if (entry.value.text.isNotEmpty) {
+                    filters[entry.key] = entry.value.text;
+                  }
                 }
-                Navigator.of(context).pop();
+
+                // Close dialog
+                Navigator.of(dialogContext).pop();
+
+                // Using Future.microtask to ensure the dialog is fully closed
+                Future.microtask(() async {
+                  try {
+                    showLoadingDialog("Applying filters...");
+
+                    // 1. Apply filters
+                    if (filters.isNotEmpty) {
+                      await dataProvider.applyFilters(filters, authProvider.token, widget.type);
+                    } else {
+                      await dataProvider.clearFilters();
+                    }
+
+                    // 2. Load the data again directly
+                    await dataProvider.loadData(widget.type, authProvider.token);
+
+                    hideLoadingDialog();
+
+                    // 3. Trigger UI rebuild
+                    setState(() {});
+                  } catch (e) {
+                    hideLoadingDialog();
+                    showErrorDialog('Failed to apply filters: $e');
+                  }
+                });
               },
             ),
           ],
@@ -125,7 +231,6 @@ class _ListScreenState extends State<ListScreen> {
       },
     );
   }
-
   // Show sort dialog
   void _showSortDialog(BuildContext context, DataProvider dataProvider) {
     showDialog(
@@ -186,7 +291,6 @@ class _ListScreenState extends State<ListScreen> {
       },
     );
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -272,7 +376,7 @@ class _ListScreenState extends State<ListScreen> {
               children: [
                 // Filter icon with label below - using filled filter icon
                 GestureDetector(
-                  onTap: () => _showFilterDialog(context, dataProvider),
+                  onTap: () =>  _showNewFilterDialog(context),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -417,7 +521,7 @@ class _ListScreenState extends State<ListScreen> {
           if (_filterControllers.containsKey(entry.key)) {
           _filterControllers[entry.key]!.clear();
           }
-          dataProvider.applyFilter(entry.key, null);
+          dataProvider.applyFilter(entry.key, null,);
           },
           ),
           );
