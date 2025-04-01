@@ -1,42 +1,47 @@
 class DashboardItem {
   final String id;
-  final String name;
   final String type;
-  final String dataSource;
+  final String title;
+  final String name;
+  final Map<String, dynamic> config;
   final Map<String, dynamic> data;
-  final Map<String, dynamic> geometry;
+  final int order;
+  final bool isActive;
 
   DashboardItem({
     required this.id,
-    required this.name,
     required this.type,
-    this.dataSource = '',
+    required this.title,
+    required this.name,
+    required this.config,
     required this.data,
-    required this.geometry,
+    required this.order,
+    required this.isActive,
   });
 
   factory DashboardItem.fromJson(Map<String, dynamic> json) {
     return DashboardItem(
-      id: json['id']?.toString() ?? '',
-      name: json['name']?.toString() ?? '',
-      type: json['type']?.toString() ?? '',
-      dataSource: json['data_source']?.toString() ?? '',
-      data: json['data'] is Map<String, dynamic> ? json['data'] : {},
-      geometry: json['geometry'] is Map<String, dynamic> ? json['geometry'] : {},
+      id: json['id'] ?? '',
+      type: json['type'] ?? '',
+      title: json['title'] ?? '',
+      name: json['name'] ?? json['title'] ?? '',
+      config: json['config'] ?? {},
+      data: json['data'] ?? {},
+      order: json['order'] ?? 0,
+      isActive: json['is_active'] ?? true,
     );
   }
-
-  // Getter for title to match your existing code
-  String get title => name;
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'name': name,
       'type': type,
-      'data_source': dataSource,
+      'title': title,
+      'name': name,
+      'config': config,
       'data': data,
-      'geometry': geometry,
+      'order': order,
+      'is_active': isActive,
     };
   }
 }

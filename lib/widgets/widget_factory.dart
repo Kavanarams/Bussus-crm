@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 import '../models/dashboard_item.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'card_widget.dart';
+import 'stats_widget.dart';
+import 'list_widget.dart';
+import 'default_widget.dart';
+
 
 class WidgetFactory {
   static Widget buildWidget(DashboardItem item) {
@@ -22,6 +28,7 @@ class WidgetFactory {
   }
 }
 
+
 class ChartWidget extends StatelessWidget {
   final DashboardItem item;
 
@@ -29,185 +36,210 @@ class ChartWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Determine specific chart type
-    String chartType = "Generic Chart";
-    if (item.type.toLowerCase().contains("pie")) {
-      chartType = "Pie Chart";
-    } else if (item.type.toLowerCase().contains("line")) {
-      chartType = "Line Chart";
-    } else if (item.type.toLowerCase().contains("bar")) {
-      chartType = "Bar Chart";
+    return Card(
+      margin: const EdgeInsets.all(8.0),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              item.name,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildChartBasedOnType(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChartBasedOnType() {
+    final type = item.type.toLowerCase();
+    final data = item.data;
+
+    // Validate data
+    if (data.isEmpty) {
+      return const Center(child: Text('No chart data available'));
     }
 
-    return Card(
-      margin: const EdgeInsets.all(8.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              item.name,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "ID: ${item.id}",
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Center(
-              child: Text("$chartType Visualization"),
-              // Replace with actual chart implementation based on item.data
-            ),
-            if (item.data.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: Text("Data: ${item.data}"),
-              ),
-          ],
+    try {
+      if (type.contains('pie')) {
+        return _buildPieChart(data);
+      } else if (type.contains('line')) {
+        return _buildLineChart(data);
+      } else if (type.contains('bar')) {
+        return _buildBarChart(data);
+      } else {
+        return _buildGenericChart(data);
+      }
+    } catch (e) {
+      print('Chart rendering error: $e');
+      return Center(child: Text('Error rendering chart: $e'));
+    }
+  }
+
+  Widget _buildPieChart(Map<String, dynamic> data) {
+    // Extract labels and values
+    final labels = data['labels'] is List ? data['labels'] : [];
+    final values = data['values'] is List ? data['values'] : [];
+
+    if (labels.isEmpty || values.isEmpty) {
+      return const Center(child: Text('No pie chart data available'));
+    }
+
+    List<PieChartSectionData> sections = [];
+
+    for (int i = 0; i < labels.length; i++) {
+      sections.add(
+        PieChartSectionData(
+          color: i % 2 == 0 ? Colors.lightBlue.shade100 : Colors.white,
+          value: (values[i] is num) ? values[i].toDouble() : 0.0,
+          title: labels[i].toString(),
+          radius: 100,
+          titleStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 250,
+      child: PieChart(
+        PieChartData(
+          sections: sections,
+          centerSpaceRadius: 40,
+          sectionsSpace: 2,
+          pieTouchData: PieTouchData(
+            touchCallback: (FlTouchEvent event, pieTouchResponse) {
+              // Optional: Handle touch events
+            },
+          ),
         ),
       ),
     );
   }
-}
 
-// Keep the other widget classes (StatsWidget, ListWidget, CardWidget, DefaultWidget) unchanged
-class StatsWidget extends StatelessWidget {
-  final DashboardItem item;
+  Widget _buildLineChart(Map<String, dynamic> data) {
+    // Debugging print
+    print('Line Chart Data: $data');
 
-  const StatsWidget({Key? key, required this.item}) : super(key: key);
+    // Check if data has 'labels' and 'values'
+    final labels = data['labels'] is List ? data['labels'] : [];
+    final values = data['values'] is List ? data['values'] : [];
 
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.all(8.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              item.name,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+    if (labels.isEmpty || values.isEmpty) {
+      return const Center(child: Text('No line chart data available'));
+    }
+
+    List<LineChartBarData> lineBars = [
+      LineChartBarData(
+        isCurved: true,
+        color: Colors.blue,
+        barWidth: 4,
+        isStrokeCapRound: true,
+        dotData: FlDotData(show: true),
+        belowBarData: BarAreaData(show: true),
+        spots: List.generate(
+            values.length,
+                (index) => FlSpot(
+                index.toDouble(),
+                (values[index] is num) ? values[index].toDouble() : 0.0
+            )
+        ),
+      )
+    ];
+
+    return SizedBox(
+      height: 250,
+      child: LineChart(
+        LineChartData(
+          gridData: FlGridData(show: true),
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  // Use labels for x-axis if available
+                  final index = value.toInt();
+                  return index >= 0 && index < labels.length
+                      ? Text(labels[index].toString())
+                      : const Text('');
+                },
               ),
             ),
-            const SizedBox(height: 12),
-            const Text("Stats Widget Placeholder"),
-          ],
+          ),
+          borderData: FlBorderData(show: true),
+          lineBarsData: lineBars,
         ),
       ),
     );
   }
-}
 
-class ListWidget extends StatelessWidget {
-  final DashboardItem item;
+  Widget _buildBarChart(Map<String, dynamic> data) {
+    // Implement bar chart similar to line chart
+    final labels = data['labels'] is List ? data['labels'] : [];
+    final values = data['values'] is List ? data['values'] : [];
 
-  const ListWidget({Key? key, required this.item}) : super(key: key);
+    if (labels.isEmpty || values.isEmpty) {
+      return const Center(child: Text('No bar chart data available'));
+    }
 
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.all(8.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              item.name,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+    List<BarChartGroupData> barGroups = List.generate(
+        values.length,
+            (index) => BarChartGroupData(
+          x: index,
+          barRods: [
+            BarChartRodData(
+              toY: (values[index] is num) ? values[index].toDouble() : 0.0,
+              color: Colors.lightBlue.shade100,
+            )
+          ],
+        )
+    );
+
+    return SizedBox(
+      height: 250,
+      child: BarChart(
+        BarChartData(
+          gridData: FlGridData(show: false),
+          barGroups: barGroups,
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final index = value.toInt();
+                  return index >= 0 && index < labels.length
+                      ? Text(labels[index].toString())
+                      : const Text('');
+                },
               ),
             ),
-            const SizedBox(height: 12),
-            const Text("List Widget Placeholder"),
-          ],
+          ),
         ),
       ),
     );
   }
-}
 
-class CardWidget extends StatelessWidget {
-  final DashboardItem item;
-
-  const CardWidget({Key? key, required this.item}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.all(8.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              item.name,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text("Card Widget Content"),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class DefaultWidget extends StatelessWidget {
-  final DashboardItem item;
-
-  const DefaultWidget({Key? key, required this.item}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.all(8.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              item.name,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "ID: ${item.id}",
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text("Unknown widget type: ${item.type}"),
-            if (item.data.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: Text("Data: ${item.data}"),
-              ),
-          ],
-        ),
-      ),
+  Widget _buildGenericChart(Map<String, dynamic> data) {
+    // Fallback generic chart representation
+    return Column(
+      children: data.entries.map((entry) {
+        return ListTile(
+          title: Text(entry.key),
+          trailing: Text(entry.value.toString()),
+        );
+      }).toList(),
     );
   }
 }

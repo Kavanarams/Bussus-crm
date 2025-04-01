@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'list_screen.dart';
 import 'home_screen.dart';
+import 'package:provider/provider.dart';
+import 'package:materio/providers/data_provider.dart';
 
 class MenuScreen extends StatelessWidget {
   @override
@@ -29,8 +31,10 @@ class MenuScreen extends StatelessWidget {
                   context,
                   'Leads',
                       () {
-                    // Instead of popping and pushing, replace the current screen
-                    // in the navigation stack with the appropriate ListScreen
+                    // Clear any existing data before navigation
+                    final dataProvider = Provider.of<DataProvider>(context, listen: false);
+                    dataProvider.clearFilters();
+
                     Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
@@ -44,6 +48,10 @@ class MenuScreen extends StatelessWidget {
                   context,
                   'Accounts',
                       () {
+                    // Clear any existing data before navigation
+                    final dataProvider = Provider.of<DataProvider>(context, listen: false);
+                    dataProvider.clearFilters();
+
                     Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
@@ -74,23 +82,28 @@ class MenuScreen extends StatelessWidget {
   }
 
   Widget _buildListItem(BuildContext context, String title, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 20.0),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
+    return Card(
+      color: Colors.white,
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 20.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
-            ),
-            Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
-          ],
+              Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+            ],
+          ),
         ),
       ),
     );

@@ -45,7 +45,7 @@ class MyApp extends StatelessWidget {
               visualDensity: VisualDensity.adaptivePlatformDensity,
             ),
             home: auth.isInitialized
-                ? (auth.isAuth ? HomeScreen() : LoginScreen())
+                ? (auth.isAuth ? MainLayout() : LoginScreen())
                 : FutureBuilder(
               future: auth.tryAutoLogin(),
               builder: (ctx, snapshot) {

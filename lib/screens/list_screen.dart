@@ -20,17 +20,35 @@ class ListScreen extends StatefulWidget {
 
 class _ListScreenState extends State<ListScreen> {
   bool _isInitialized = false;
+  bool _isLoading = true;
 
   // Filter and sort state
   final Map<String, TextEditingController> _filterControllers = {};
   String? _activeSortColumn;
   bool _sortAscending = true;
+  Map<String, String> _columnLabels = {};
+
+  void _updateColumnLabels(List<ColumnInfo> allColumns) {
+    _columnLabels.clear();
+    for (var column in allColumns) {
+      _columnLabels[column.name] = column.label;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     print('📋 List screen initialized for type: ${widget.type}');
     _loadData();
+  }
+
+  @override
+  void didUpdateWidget(ListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.type != widget.type) {
+      print('📋 Type changed from ${oldWidget.type} to ${widget.type}');
+      _loadData();
+    }
   }
 
   @override
@@ -43,119 +61,85 @@ class _ListScreenState extends State<ListScreen> {
   Future<void> _loadData() async {
     if (!_isInitialized) {
       _isInitialized = true;
+    }
 
-      // Add a short delay to ensure the widget is fully initialized
-      Future.delayed(Duration.zero, () {
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        final dataProvider = Provider.of<DataProvider>(context, listen: false);
+    setState(() {
+      _isLoading = true;
+    });
 
-        print('📋 Loading data for type: ${widget.type}');
-        dataProvider.loadData(widget.type, authProvider.token);
-      });
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final dataProvider = Provider.of<DataProvider>(context, listen: false);
+
+      print('📋 Loading data for type: ${widget.type}');
+      await dataProvider.loadData(widget.type, authProvider.token);
+    } catch (e) {
+      print('❌ Error loading data: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   // Show filter dialog
-  void _showNewFilterDialog(BuildContext context) {
+  // Modify the _showFilterDialog method in _ListScreenState:
+
+  void _showFilterDialog() {
     final dataProvider = Provider.of<DataProvider>(context, listen: false);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final controllers = Map<String, TextEditingController>.from(_filterControllers);
 
     // Initialize controllers with current filter values
-    Map<String, TextEditingController> controllers = {};
-    for (var column in dataProvider.visibleColumns) {
-      controllers[column] = TextEditingController(
-        text: dataProvider.activeFilters[column]?.toString() ?? '',
-      );
-    }
-
-    // Track if a loading dialog is currently showing
-    bool isLoadingDialogShowing = false;
-
-    // Function to safely show the loading dialog
-    void showLoadingDialog(String message) {
-      if (isLoadingDialogShowing) return;
-
-      isLoadingDialogShowing = true;
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext dialogContext) {
-          return AlertDialog(
-            content: Row(
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(width: 20),
-                Text(message)
-              ],
-            ),
-          );
-        },
-      );
-    }
-
-    // Function to safely close the loading dialog
-    void hideLoadingDialog() {
-      if (isLoadingDialogShowing && Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
-        isLoadingDialogShowing = false;
+    dataProvider.activeFilters.forEach((key, value) {
+      if (!controllers.containsKey(key)) {
+        controllers[key] = TextEditingController();
       }
-    }
+      controllers[key]!.text = value.toString();
+    });
 
-    // Function to show error dialog
-    void showErrorDialog(String message) {
-      showDialog(
-        context: context,
-        builder: (BuildContext dialogContext) {
-          return AlertDialog(
-            title: Text('Error'),
-            content: Text(message),
-            actions: [
-              TextButton(
-                child: Text('OK'),
-                onPressed: () => Navigator.of(dialogContext).pop(),
-              )
-            ],
-          );
-        },
-      );
+    // Ensure all visible columns have controllers
+    for (var column in dataProvider.visibleColumns) {
+      if (!controllers.containsKey(column)) {
+        controllers[column] = TextEditingController();
+      }
     }
 
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
+          backgroundColor: Colors.white,
           title: Text('Filter ${widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)}'),
           content: Container(
             width: double.maxFinite,
             child: ListView(
               shrinkWrap: true,
-              children: dataProvider.visibleColumns.map((column) {
-                // Get label for the column
-                String label = 'Unknown';
-                for (var colInfo in dataProvider.allColumns) {
-                  if (colInfo.name == column) {
-                    label = colInfo.label;
-                    break;
-                  }
-                }
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: TextField(
-                    controller: controllers[column],
-                    decoration: InputDecoration(
-                      labelText: label,
-                      hintText: 'Filter by $label',
-                      border: OutlineInputBorder(),
+              children: [
+                // Filter input fields
+                ...dataProvider.visibleColumns.map((column) {
+                  String label = _columnLabels[column] ?? column;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: TextField(
+                      controller: controllers[column],
+                      decoration: InputDecoration(
+                        labelText: label,
+                        hintText: 'Filter by $label',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                );
-              }).toList(),
+                  );
+                }).toList(),
+              ],
             ),
           ),
           actions: <Widget>[
             TextButton(
               child: Text('Clear All'),
-              onPressed: () {
+              onPressed: () async {
                 // Clear controllers
                 controllers.forEach((key, controller) {
                   controller.clear();
@@ -164,66 +148,50 @@ class _ListScreenState extends State<ListScreen> {
                 // Close the filter dialog
                 Navigator.of(dialogContext).pop();
 
-                // Using Future.microtask to ensure the dialog is fully closed
-                Future.microtask(() async {
-                  try {
-                    showLoadingDialog("Clearing filters...");
-
-                    // 1. Clear filters
-                    await dataProvider.clearFilters();
-
-                    // 2. Load the data again directly
-                    await dataProvider.loadData(widget.type, authProvider.token);
-
-                    hideLoadingDialog();
-
-                    // 3. Force UI rebuild
-                    setState(() {});
-                  } catch (e) {
-                    hideLoadingDialog();
-                    showErrorDialog('Failed to clear filters: $e');
-                  }
+                // Clear filters and show loading state
+                setState(() {
+                  _isLoading = true;
                 });
+
+                // Clear filters
+                await dataProvider.clearFilters();
+
+                // Update loading state
+                if (mounted) {
+                  setState(() {
+                    _isLoading = false;
+                  });
+                }
               },
             ),
             TextButton(
               child: Text('Apply'),
-              onPressed: () {
-                // Collect non-empty filter values
-                Map<String, String> filters = {};
-                for (var entry in controllers.entries) {
-                  if (entry.value.text.isNotEmpty) {
-                    filters[entry.key] = entry.value.text;
-                  }
-                }
-
-                // Close dialog
-                Navigator.of(dialogContext).pop();
-
-                // Using Future.microtask to ensure the dialog is fully closed
-                Future.microtask(() async {
-                  try {
-                    showLoadingDialog("Applying filters...");
-
-                    // 1. Apply filters
-                    if (filters.isNotEmpty) {
-                      await dataProvider.applyFilters(filters, authProvider.token, widget.type);
-                    } else {
-                      await dataProvider.clearFilters();
-                    }
-
-                    // 2. Load the data again directly
-                    await dataProvider.loadData(widget.type, authProvider.token);
-
-                    hideLoadingDialog();
-
-                    // 3. Trigger UI rebuild
-                    setState(() {});
-                  } catch (e) {
-                    hideLoadingDialog();
-                    showErrorDialog('Failed to apply filters: $e');
+              onPressed: () async {
+                // Apply filters
+                Map<String, String> newFilters = {};
+                controllers.forEach((key, controller) {
+                  if (controller.text.isNotEmpty) {
+                    newFilters[key] = controller.text;
                   }
                 });
+
+                // Close the filter dialog
+                Navigator.of(dialogContext).pop();
+
+                // Show loading state while filtering
+                setState(() {
+                  _isLoading = true;
+                });
+
+                // Apply filters
+                await dataProvider.applyFilters(newFilters, authProvider.token, widget.type);
+
+                // Update loading state
+                if (mounted) {
+                  setState(() {
+                    _isLoading = false;
+                  });
+                }
               },
             ),
           ],
@@ -232,61 +200,55 @@ class _ListScreenState extends State<ListScreen> {
     );
   }
   // Show sort dialog
-  void _showSortDialog(BuildContext context, DataProvider dataProvider) {
+  void _showSortDialog(BuildContext context) {
+    final dataProvider = Provider.of<DataProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    // Update column labels
+    _updateColumnLabels(dataProvider.allColumns);
+
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
+          backgroundColor: Colors.white,
           title: Text('Sort ${widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)}'),
           content: Container(
             width: double.maxFinite,
             child: ListView(
               shrinkWrap: true,
-              children: dataProvider.visibleColumns.map((column) {
-                // Get label for the column
-                String label = 'Unknown';
-                for (var colInfo in dataProvider.allColumns) {
-                  if (colInfo.name == column) {
-                    label = colInfo.label;
-                    break;
-                  }
-                }
-
-                final isActiveSort = dataProvider.sortColumn == column;
-
-                return ListTile(
-                  title: Text(label),
-                  trailing: isActiveSort
-                      ? Icon(
-                    dataProvider.sortAscending
-                        ? Icons.arrow_upward
-                        : Icons.arrow_downward,
-                    color: Colors.blue,
-                  )
-                      : null,
-                  onTap: () {
-                    dataProvider.applySort(column);
-                    Navigator.of(context).pop();
-                  },
-                );
-              }).toList(),
+              children: [
+                // Sort options
+                ...dataProvider.visibleColumns.map((column) {
+                  String label = _columnLabels[column] ?? column;
+                  bool isActive = dataProvider.sortColumn == column;
+                  return ListTile(
+                    title: Text(label),
+                    trailing: isActive
+                        ? Icon(
+                            dataProvider.sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                            color: Colors.blue,
+                          )
+                        : null,
+                    onTap: () {
+                      dataProvider.applySort(column);
+                      Navigator.of(dialogContext).pop();
+                    },
+                  );
+                }).toList(),
+                // Clear sort option
+                if (dataProvider.sortColumn != null)
+                  ListTile(
+                    title: Text('Clear Sort'),
+                    leading: Icon(Icons.clear, color: Colors.red),
+                    onTap: () {
+                      dataProvider.clearSort();
+                      Navigator.of(dialogContext).pop();
+                    },
+                  ),
+              ],
             ),
           ),
-          actions: <Widget>[
-            TextButton(
-              child: Text('Clear Sort'),
-              onPressed: () {
-                dataProvider.clearSort();
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
         );
       },
     );
@@ -294,14 +256,14 @@ class _ListScreenState extends State<ListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFE0F7FA), // Light blue background
+      backgroundColor: Color(0xFFE0F7FA),
       appBar: AppBar(
         title: Text(
           'List View',
-          style: TextStyle(color: Colors.white, fontSize: 16), // White text color
+          style: TextStyle(color: Colors.white, fontSize: 16),
         ),
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Colors.white), // Arrow back icon in white
+          icon: Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () {
             Navigator.push(
               context,
@@ -313,20 +275,37 @@ class _ListScreenState extends State<ListScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.search, color: Colors.white), // White icon
+            icon: Icon(Icons.refresh, color: Colors.white),
+            onPressed: () {
+              _loadData();
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.search, color: Colors.white),
             onPressed: () {
               // Search functionality
             },
           ),
           IconButton(
-            icon: Icon(Icons.notifications, color: Colors.white), // White icon
+            icon: Icon(Icons.notifications, color: Colors.white),
             onPressed: () {
               // Notifications functionality
             },
           ),
         ],
       ),
-      body: Consumer<DataProvider>(
+      body: _isLoading
+          ? Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Loading data...'),
+          ],
+        ),
+      )
+          : Consumer<DataProvider>(
         builder: (ctx, dataProvider, _) {
           // Debug prints
           print('📋 Building list view. isLoading: ${dataProvider.isLoading}');
@@ -334,11 +313,40 @@ class _ListScreenState extends State<ListScreen> {
           print('📋 Items count: ${dataProvider.items.length}');
 
           if (dataProvider.isLoading) {
-            return Center(child: CircularProgressIndicator());
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Loading data...'),
+                ],
+              ),
+            );
           }
 
           if (dataProvider.error != null) {
-            return Center(child: Text(dataProvider.error!));
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red, size: 48),
+                  SizedBox(height: 16),
+                  Text(
+                    dataProvider.error!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      _loadData();
+                    },
+                    child: Text('Retry'),
+                  ),
+                ],
+              ),
+            );
           }
 
           final items = dataProvider.items;
@@ -358,214 +366,197 @@ class _ListScreenState extends State<ListScreen> {
           print('📋 Limited visible columns: $limitedVisibleColumns');
           print('📋 All columns count: ${allColumns.length}');
 
-          // Create a map of column names to labels
-          Map<String, String> columnLabels = {};
-          for (var column in allColumns) {
-            columnLabels[column.name] = column.label;
-          }
-
           return Column(
             children: [
-            // Filter, Sort, New bar - reduced vertical height and spacing
-            Container(
-            width: double.infinity,
-            color: Colors.white,
-            padding: EdgeInsets.symmetric(vertical: 8, horizontal: 24), // Reduced vertical padding
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround, // More compact spacing
-              children: [
-                // Filter icon with label below - using filled filter icon
-                GestureDetector(
-                  onTap: () =>  _showNewFilterDialog(context),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Stack(
+              // Filter, Sort, New bar - reduced vertical height and spacing
+              Container(
+                width: double.infinity,
+                color: Colors.white,
+                padding: EdgeInsets.symmetric(vertical: 8, horizontal: 24), // Reduced vertical padding
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround, // More compact spacing
+                  children: [
+                    // Filter icon with label below - using filled filter icon
+                    GestureDetector(
+                      onTap: () =>  _showFilterDialog(),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          CircleAvatar(
-                            backgroundColor: Colors.blue.withOpacity(0.2),
-                            radius: 16, // Slightly smaller
-                            child: Icon(Icons.filter_alt, color: Color(0xFF0D47A1), size: 18), // Changed to filter_alt (filled filter)
-                          ),
-                          if (dataProvider.activeFilters.isNotEmpty)
-                            Positioned(
-                              right: 0,
-                              top: 0,
-                              child: Container(
-                                padding: EdgeInsets.all(2),
-                                decoration: BoxDecoration(
-                                  color: Colors.red,
-                                  shape: BoxShape.circle,
-                                ),
-                                constraints: BoxConstraints(
-                                  minWidth: 8,
-                                  minHeight: 8,
-                                ),
+                          Stack(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: Colors.blue.withOpacity(0.2),
+                                radius: 16, // Slightly smaller
+                                child: Icon(Icons.filter_alt, color: Color(0xFF0D47A1), size: 18), // Changed to filter_alt (filled filter)
                               ),
+                              if (dataProvider.activeFilters.isNotEmpty)
+                                Positioned(
+                                  right: 0,
+                                  top: 0,
+                                  child: Container(
+                                    padding: EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    constraints: BoxConstraints(
+                                      minWidth: 8,
+                                      minHeight: 8,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          SizedBox(height: 2), // Reduced spacing
+                          Text(
+                            'Filter',
+                            style: TextStyle(
+                              fontSize: 11, // Slightly smaller
+                              color: Color(0xFF0D47A1),
+                              fontWeight: FontWeight.w500,
                             ),
+                          ),
                         ],
                       ),
-                      SizedBox(height: 2), // Reduced spacing
-                      Text(
-                        'Filter',
-                        style: TextStyle(
-                          fontSize: 11, // Slightly smaller
-                          color: Color(0xFF0D47A1),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
 
-                // Sort icon with label below
-                GestureDetector(
-                  onTap: () => _showSortDialog(context, dataProvider),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Stack(
+                    // Sort icon with label below
+                    GestureDetector(
+                      onTap: () => _showSortDialog(context),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          CircleAvatar(
-                            backgroundColor: Colors.blue.withOpacity(0.2),
-                            radius: 16, // Slightly smaller
-                            child: Icon(Icons.sort, color: Color(0xFF0D47A1), size: 18),
-                          ),
-                          if (dataProvider.sortColumn != null)
-                            Positioned(
-                              right: 0,
-                              top: 0,
-                              child: Container(
-                                padding: EdgeInsets.all(2),
-                                decoration: BoxDecoration(
-                                  color: Colors.red,
-                                  shape: BoxShape.circle,
-                                ),
-                                constraints: BoxConstraints(
-                                  minWidth: 8,
-                                  minHeight: 8,
-                                ),
+                          Stack(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: Colors.blue.withOpacity(0.2),
+                                radius: 16, // Slightly smaller
+                                child: Icon(Icons.sort, color: Color(0xFF0D47A1), size: 18),
                               ),
+                              if (dataProvider.sortColumn != null)
+                                Positioned(
+                                  right: 0,
+                                  top: 0,
+                                  child: Container(
+                                    padding: EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    constraints: BoxConstraints(
+                                      minWidth: 8,
+                                      minHeight: 8,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          SizedBox(height: 2), // Reduced spacing
+                          Text(
+                            'Sort',
+                            style: TextStyle(
+                              fontSize: 11, // Slightly smaller
+                              color: Color(0xFF0D47A1),
+                              fontWeight: FontWeight.w500,
                             ),
+                          ),
                         ],
                       ),
-                      SizedBox(height: 2), // Reduced spacing
-                      Text(
-                        'Sort',
-                        style: TextStyle(
-                          fontSize: 11, // Slightly smaller
-                          color: Color(0xFF0D47A1),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
 
-                // New icon with label below
-                GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => NewItemScreen(type: widget.type),
+                    // New icon with label below
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => NewItemScreen(type: widget.type),
+                          ),
+                        );
+                      },
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: Colors.blue,
+                            radius: 16, // Slightly smaller
+                            child: Icon(Icons.add, color: Colors.white, size: 18),
+                          ),
+                          SizedBox(height: 2), // Reduced spacing
+                          Text(
+                            'New',
+                            style: TextStyle(
+                              fontSize: 11, // Slightly smaller
+                              color: Color(0xFF0D47A1),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
-                    );
-                  },
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                    ),
+                  ],
+                ),
+              ),
+
+              // Status bar for active filters and sorting
+              if (dataProvider.activeFilters.isNotEmpty || dataProvider.sortColumn != null)
+                Container(
+                  color: Colors.grey.shade100,
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  child: Row(
                     children: [
-                      CircleAvatar(
-                        backgroundColor: Colors.blue,
-                        radius: 16, // Slightly smaller
-                        child: Icon(Icons.add, color: Colors.white, size: 18),
-                      ),
-                      SizedBox(height: 2), // Reduced spacing
-                      Text(
-                        'New',
-                        style: TextStyle(
-                          fontSize: 11, // Slightly smaller
-                          color: Color(0xFF0D47A1),
-                          fontWeight: FontWeight.w500,
+                      Expanded(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              if (dataProvider.activeFilters.isNotEmpty)
+                                ...dataProvider.activeFilters.entries.map((entry) {
+                                  String label = _columnLabels[entry.key] ?? entry.key;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8.0),
+                                    child: Chip(
+                                      backgroundColor: Colors.blue.shade50,
+                                      label: Text('$label: ${entry.value}'),
+                                      deleteIcon: Icon(Icons.close, size: 16),
+                                      onDeleted: () {
+                                        if (_filterControllers.containsKey(entry.key)) {
+                                          _filterControllers[entry.key]!.clear();
+                                        }
+                                        dataProvider.applyFilter(entry.key, null);
+                                      },
+                                    ),
+                                  );
+                                }).toList(),
+                              if (dataProvider.sortColumn != null)
+                                Chip(
+                                  backgroundColor: Colors.purple.shade50,
+                                  label: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text('${_columnLabels[dataProvider.sortColumn] ?? dataProvider.sortColumn}'),
+                                      SizedBox(width: 4),
+                                      Icon(
+                                        dataProvider.sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                                        size: 16,
+                                      ),
+                                    ],
+                                  ),
+                                  deleteIcon: Icon(Icons.close, size: 16),
+                                  onDeleted: () {
+                                    dataProvider.clearSort();
+                                  },
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-              ],
-            ),
-          ),
 
-          // Status bar for active filters and sorting
-          if (dataProvider.activeFilters.isNotEmpty || dataProvider.sortColumn != null)
-          Container(
-          color: Colors.grey.shade100,
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          child: Row(
-          children: [
-          Expanded(
-          child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-          children: [
-          if (dataProvider.activeFilters.isNotEmpty)
-          ...dataProvider.activeFilters.entries.map((entry) {
-          String label = columnLabels[entry.key] ?? entry.key;
-          return Padding(
-          padding: const EdgeInsets.only(right: 8.0),
-          child: Chip(
-          backgroundColor: Colors.blue.shade50,
-          label: Text('$label: ${entry.value}'),
-          deleteIcon: Icon(Icons.close, size: 16),
-          onDeleted: () {
-          if (_filterControllers.containsKey(entry.key)) {
-          _filterControllers[entry.key]!.clear();
-          }
-          dataProvider.applyFilter(entry.key, null,);
-          },
-          ),
-          );
-          }).toList(),
-          if (dataProvider.sortColumn != null)
-          Chip(
-          backgroundColor: Colors.purple.shade50,
-          label: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-          Text('Sort: ${columnLabels[dataProvider.sortColumn] ?? dataProvider.sortColumn}'),
-          SizedBox(width: 4),
-          Icon(
-          dataProvider.sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-          size: 16,
-          ),
-          ],
-          ),
-          deleteIcon: Icon(Icons.close, size: 16),
-          onDeleted: () {
-          dataProvider.clearSort();
-          },
-          ),
-          ],
-          ),
-          ),
-          ),
-          if (dataProvider.activeFilters.isNotEmpty || dataProvider.sortColumn != null)
-          TextButton(
-          onPressed: () {
-          dataProvider.clearFilters();
-          dataProvider.clearSort();
-          _filterControllers.forEach((key, controller) => controller.clear());
-          },
-          child: Text('Clear All'),
-          ),
-          ],
-          ),
-          ),
-
-          // Gap between filter bar and data card
-          SizedBox(height: 12), // Reduced from 16 to 12
-
-
+              // Gap between filter bar and data card
+              SizedBox(height: 12), // Reduced from 16 to 12
 
               // Data card
               Expanded(
@@ -601,7 +592,7 @@ class _ListScreenState extends State<ListScreen> {
                             itemBuilder: (ctx, index) {
                               final item = items[index];
 
-                              return _buildDynamicItem(item, limitedVisibleColumns, columnLabels);
+                              return _buildDynamicItem(item, limitedVisibleColumns, _columnLabels);
                             },
                           ),
                         ),
@@ -617,34 +608,6 @@ class _ListScreenState extends State<ListScreen> {
           );
         },
       ),
-      // Bottom navigation bar
-      // bottomNavigationBar: BottomNavigationBar(
-      //   type: BottomNavigationBarType.fixed,
-      //   backgroundColor: Colors.white,
-      //   selectedItemColor: Colors.blue,
-      //   unselectedItemColor: Colors.grey,
-      //   items: [
-      //     BottomNavigationBarItem(
-      //       icon: Icon(Icons.favorite),
-      //       label: 'Label',
-      //     ),
-      //     BottomNavigationBarItem(
-      //       icon: Icon(Icons.shopping_cart),
-      //       label: 'Products',
-      //     ),
-      //     BottomNavigationBarItem(
-      //       icon: Icon(Icons.receipt),
-      //       label: 'Invoices',
-      //     ),
-      //     BottomNavigationBarItem(
-      //       icon: Icon(Icons.favorite_border),
-      //       label: 'Menu',
-      //     ),
-      //   ],
-      //   onTap: (index) {
-      //     // Handle navigation to appropriate screen based on index
-      //   },
-      // ),
     );
   }
 
@@ -718,10 +681,15 @@ class _ListScreenState extends State<ListScreen> {
                     size: 25,
                     color: Colors.grey.shade600,
                   ),
+                  color: Colors.white,
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                   onSelected: (String value) async{
                     if (value == 'details') {
                       // Navigate to details page
-                      Navigator.push(
+                      final result = await Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (context) => DetailsScreen(
@@ -730,6 +698,12 @@ class _ListScreenState extends State<ListScreen> {
                           ),
                         ),
                       );
+                      // If result is true, refresh the data immediately
+                      if (result == true) {
+                        final dataProvider = Provider.of<DataProvider>(context, listen: false);
+                        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                        await dataProvider.loadData(widget.type, authProvider.token);
+                      }
                     } else if (value == 'edit') {
                       final result = await Navigator.push(
                         context,
@@ -740,23 +714,23 @@ class _ListScreenState extends State<ListScreen> {
                           ),
                         ),
                       );
-                        if (result == true) {
-                              // We could refresh data here, but it's already done in updateItem method
-                              // Just show a confirmation
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('item updated successfully!'),
-                              backgroundColor: Colors.green,
-                              duration: Duration(seconds: 2),
-                              behavior: SnackBarBehavior.floating,
-                              margin: EdgeInsets.only(
-                                top: 100,
-                                left: 10,
-                                right: 10,
-                              ),
+                      if (result == true) {
+                        // We could refresh data here, but it's already done in updateItem method
+                        // Just show a confirmation
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('item updated successfully!'),
+                            backgroundColor: Colors.green,
+                            duration: Duration(seconds: 2),
+                            behavior: SnackBarBehavior.floating,
+                            margin: EdgeInsets.only(
+                              top: 100,
+                              left: 10,
+                              right: 10,
                             ),
-                          );
-                        }
+                          ),
+                        );
+                      }
                     }
                   },
                   itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -764,9 +738,9 @@ class _ListScreenState extends State<ListScreen> {
                       value: 'details',
                       child: Row(
                         children: [
-                          Icon(Icons.visibility, color: Color(0xFF0D47A1)),
+                          Icon(Icons.visibility, color: Colors.lightBlue),
                           SizedBox(width: 8),
-                          Text('Details'),
+                          Text('Details', style: TextStyle(color: Colors.lightBlue)),
                         ],
                       ),
                     ),
@@ -774,9 +748,9 @@ class _ListScreenState extends State<ListScreen> {
                       value: 'edit',
                       child: Row(
                         children: [
-                          Icon(Icons.edit, color: Color(0xFF0D47A1)),
+                          Icon(Icons.edit, color: Colors.lightBlue),
                           SizedBox(width: 8),
-                          Text('Edit'),
+                          Text('Edit', style: TextStyle(color: Colors.lightBlue)),
                         ],
                       ),
                     ),
