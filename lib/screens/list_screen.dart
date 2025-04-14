@@ -8,6 +8,10 @@ import 'home_screen.dart';
 import 'new_item_screen.dart';
 import 'details_screen.dart';
 import 'edit_screen.dart';
+import 'dart:async';
+import 'filter_logic.dart' as filterlogic;
+import 'filterpage.dart' as filter;
+import 'sortpage.dart';
 
 class ListScreen extends StatefulWidget {
   final String type;
@@ -21,12 +25,92 @@ class ListScreen extends StatefulWidget {
 class _ListScreenState extends State<ListScreen> {
   bool _isInitialized = false;
   bool _isLoading = true;
+  bool _isScrolledToBottom = false;
 
   // Filter and sort state
   final Map<String, TextEditingController> _filterControllers = {};
   String? _activeSortColumn;
   bool _sortAscending = true;
   Map<String, String> _columnLabels = {};
+
+  // Search state variables
+  bool isSearchMode = false;
+  TextEditingController _searchController = TextEditingController();
+  FocusNode _searchFocusNode = FocusNode();
+  Timer? _searchDebounce;
+
+  @override
+  void dispose() {
+    _searchFocusNode.dispose();
+    _searchController.dispose();
+    _filterControllers.forEach((key, controller) => controller.dispose());
+    if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+    super.dispose();
+  }
+
+  void _toggleSearchMode() {
+    setState(() {
+      isSearchMode = !isSearchMode;
+      if (isSearchMode) {
+        _searchController.clear();
+        // Request focus after the state has been updated
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _searchFocusNode.requestFocus();
+        });
+      }
+    });
+  }
+
+  void _handleSearchTextChanged(String query) {
+    // If the search text is empty and backspace was pressed, exit search mode
+    if (query.isEmpty && _searchController.text.isEmpty) {
+      _toggleSearchMode();
+      // Also reload the original data
+      _loadData();
+      return;
+    }
+
+    // Debounce the search for better performance
+    if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+    _searchDebounce = Timer(Duration(milliseconds: 500), () {
+      _performSearch(query);
+    });
+  }
+
+  // Modify your _performSearch method
+  void _performSearch(String query) async {
+    if (query.isEmpty) {
+      // If query is empty, reload all data
+      _loadData();
+      return;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final dataProvider = Provider.of<DataProvider>(context, listen: false);
+
+      await dataProvider.searchData(widget.type, query, authProvider.token);
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Error searching data: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   void _updateColumnLabels(List<ColumnInfo> allColumns) {
     _columnLabels.clear();
@@ -51,17 +135,10 @@ class _ListScreenState extends State<ListScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    // Dispose all filter controllers
-    _filterControllers.forEach((key, controller) => controller.dispose());
-    super.dispose();
-  }
-
+  // Modify your _loadData method to ensure it doesn't trigger setState during build:
   Future<void> _loadData() async {
-    if (!_isInitialized) {
-      _isInitialized = true;
-    }
+    // Don't set state if we're in the middle of building
+    if (!mounted) return;
 
     setState(() {
       _isLoading = true;
@@ -71,11 +148,18 @@ class _ListScreenState extends State<ListScreen> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final dataProvider = Provider.of<DataProvider>(context, listen: false);
 
-      print('📋 Loading data for type: ${widget.type}');
-      await dataProvider.loadData(widget.type, authProvider.token);
+      // Schedule this after the current build cycle
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await dataProvider.loadData(widget.type, authProvider.token);
+
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      });
     } catch (e) {
       print('❌ Error loading data: $e');
-    } finally {
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -84,214 +168,140 @@ class _ListScreenState extends State<ListScreen> {
     }
   }
 
-  // Show filter dialog
-  // Modify the _showFilterDialog method in _ListScreenState:
-
-  void _showFilterDialog() {
-    final dataProvider = Provider.of<DataProvider>(context, listen: false);
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final controllers = Map<String, TextEditingController>.from(_filterControllers);
-
-    // Initialize controllers with current filter values
-    dataProvider.activeFilters.forEach((key, value) {
-      if (!controllers.containsKey(key)) {
-        controllers[key] = TextEditingController();
-      }
-      controllers[key]!.text = value.toString();
-    });
-
-    // Ensure all visible columns have controllers
-    for (var column in dataProvider.visibleColumns) {
-      if (!controllers.containsKey(column)) {
-        controllers[column] = TextEditingController();
-      }
+  void _openSortPage() async {
+    // Navigate to sort page and wait for result
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SortPage(type: widget.type),
+      ),
+    );
+    
+    // Handle the result
+    if (result == true) {
+      // Sort settings were changed
+      print('🔀 Returning from SortPage with changes');
+      
+      // No need to reload data - the provider's sorting is already applied
+      // Just refresh the UI by calling setState
+      setState(() {});
+      
+      // Show a confirmation snackbar if you want
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sorting applied'),
+          duration: Duration(seconds: 1),
+        ),
+      );
     }
-
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          title: Text('Filter ${widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)}'),
-          content: Container(
-            width: double.maxFinite,
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                // Filter input fields
-                ...dataProvider.visibleColumns.map((column) {
-                  String label = _columnLabels[column] ?? column;
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: TextField(
-                      controller: controllers[column],
-                      decoration: InputDecoration(
-                        labelText: label,
-                        hintText: 'Filter by $label',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: Text('Clear All'),
-              onPressed: () async {
-                // Clear controllers
-                controllers.forEach((key, controller) {
-                  controller.clear();
-                });
-
-                // Close the filter dialog
-                Navigator.of(dialogContext).pop();
-
-                // Clear filters and show loading state
-                setState(() {
-                  _isLoading = true;
-                });
-
-                // Clear filters
-                await dataProvider.clearFilters();
-
-                // Update loading state
-                if (mounted) {
-                  setState(() {
-                    _isLoading = false;
-                  });
-                }
-              },
-            ),
-            TextButton(
-              child: Text('Apply'),
-              onPressed: () async {
-                // Apply filters
-                Map<String, String> newFilters = {};
-                controllers.forEach((key, controller) {
-                  if (controller.text.isNotEmpty) {
-                    newFilters[key] = controller.text;
-                  }
-                });
-
-                // Close the filter dialog
-                Navigator.of(dialogContext).pop();
-
-                // Show loading state while filtering
-                setState(() {
-                  _isLoading = true;
-                });
-
-                // Apply filters
-                await dataProvider.applyFilters(newFilters, authProvider.token, widget.type);
-
-                // Update loading state
-                if (mounted) {
-                  setState(() {
-                    _isLoading = false;
-                  });
-                }
-              },
-            ),
-          ],
-        );
-      },
-    );
   }
-  // Show sort dialog
+
+  void _showFilterPage(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => filter.FilterPage(
+          type: widget.type,
+        ),
+      ),
+    ).then((filtersApplied) {
+      if (filtersApplied == true) {
+        // Force refresh if filters were applied or cleared
+        setState(() {
+          _isLoading = true;
+        });
+        
+        // Make sure the data is reloaded
+        _loadData();
+      }
+    });
+  }
+ 
   void _showSortDialog(BuildContext context) {
-    final dataProvider = Provider.of<DataProvider>(context, listen: false);
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
-    // Update column labels
-    _updateColumnLabels(dataProvider.allColumns);
-
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          title: Text('Sort ${widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)}'),
-          content: Container(
-            width: double.maxFinite,
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                // Sort options
-                ...dataProvider.visibleColumns.map((column) {
-                  String label = _columnLabels[column] ?? column;
-                  bool isActive = dataProvider.sortColumn == column;
-                  return ListTile(
-                    title: Text(label),
-                    trailing: isActive
-                        ? Icon(
-                            dataProvider.sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                            color: Colors.blue,
-                          )
-                        : null,
-                    onTap: () {
-                      dataProvider.applySort(column);
-                      Navigator.of(dialogContext).pop();
-                    },
-                  );
-                }).toList(),
-                // Clear sort option
-                if (dataProvider.sortColumn != null)
-                  ListTile(
-                    title: Text('Clear Sort'),
-                    leading: Icon(Icons.clear, color: Colors.red),
-                    onTap: () {
-                      dataProvider.clearSort();
-                      Navigator.of(dialogContext).pop();
-                    },
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => SortPage(
+          type: widget.type,
+        ),
+      ),
+    ).then((sortApplied) {
+      if (sortApplied == true) {
+        // Force refresh if sort was applied or cleared
+        setState(() {
+          _isLoading = true;
+        });
+        
+        // Reload data explicitly
+        _loadData();
+      }
+    });
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFFE0F7FA),
       appBar: AppBar(
-        title: Text(
+        // Conditional app bar content
+        title: isSearchMode
+            ? TextField(
+          controller: _searchController,
+          focusNode: _searchFocusNode,
+          style: TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Search...',
+            hintStyle: TextStyle(color: Colors.white70),
+            border: InputBorder.none,
+          ),
+          onChanged: _handleSearchTextChanged,
+        )
+            : Text(
           'List View',
           style: TextStyle(color: Colors.white, fontSize: 16),
         ),
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => MainLayout(initialIndex: 3),
-              ),
-            );
+            if (isSearchMode) {
+              _toggleSearchMode();
+              _loadData(); // Reload original data
+            } else {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => MainLayout(initialIndex: 3),
+                ),
+              );
+            }
           },
         ),
         actions: [
-          IconButton(
-            icon: Icon(Icons.refresh, color: Colors.white),
-            onPressed: () {
-              _loadData();
-            },
-          ),
-          IconButton(
-            icon: Icon(Icons.search, color: Colors.white),
-            onPressed: () {
-              // Search functionality
-            },
-          ),
-          IconButton(
-            icon: Icon(Icons.notifications, color: Colors.white),
-            onPressed: () {
-              // Notifications functionality
-            },
-          ),
+          if (!isSearchMode) ...[
+            IconButton(
+              icon: Icon(Icons.refresh, color: Colors.white),
+              onPressed: () {
+                _loadData();
+              },
+            ),
+            IconButton(
+              icon: Icon(Icons.search, color: Colors.white),
+              onPressed: _toggleSearchMode,
+            ),
+            IconButton(
+              icon: Icon(Icons.notifications, color: Colors.white),
+              onPressed: () {
+                // Notifications functionality
+              },
+            ),
+          ],
+          if (isSearchMode) ...[
+            IconButton(
+              icon: Icon(Icons.close, color: Colors.white),
+              onPressed: () {
+                _searchController.clear();
+                _handleSearchTextChanged('');
+              },
+            ),
+          ],
         ],
       ),
       body: _isLoading
@@ -361,6 +371,9 @@ class _ListScreenState extends State<ListScreen> {
               : visibleColumns;
 
           final allColumns = dataProvider.allColumns;
+          
+          // Update column labels mapping
+          _updateColumnLabels(allColumns);
 
           print('📋 Visible columns: $visibleColumns');
           print('📋 Limited visible columns: $limitedVisibleColumns');
@@ -378,7 +391,7 @@ class _ListScreenState extends State<ListScreen> {
                   children: [
                     // Filter icon with label below - using filled filter icon
                     GestureDetector(
-                      onTap: () =>  _showFilterDialog(),
+                      onTap: () =>  _showFilterPage(context),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -499,7 +512,7 @@ class _ListScreenState extends State<ListScreen> {
               ),
 
               // Status bar for active filters and sorting
-              if (dataProvider.activeFilters.isNotEmpty || dataProvider.sortColumn != null)
+              if (dataProvider.activeFilters.isNotEmpty)
                 Container(
                   color: Colors.grey.shade100,
                   padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -510,43 +523,23 @@ class _ListScreenState extends State<ListScreen> {
                           scrollDirection: Axis.horizontal,
                           child: Row(
                             children: [
-                              if (dataProvider.activeFilters.isNotEmpty)
-                                ...dataProvider.activeFilters.entries.map((entry) {
-                                  String label = _columnLabels[entry.key] ?? entry.key;
-                                  return Padding(
-                                    padding: const EdgeInsets.only(right: 8.0),
-                                    child: Chip(
-                                      backgroundColor: Colors.blue.shade50,
-                                      label: Text('$label: ${entry.value}'),
-                                      deleteIcon: Icon(Icons.close, size: 16),
-                                      onDeleted: () {
-                                        if (_filterControllers.containsKey(entry.key)) {
-                                          _filterControllers[entry.key]!.clear();
-                                        }
-                                        dataProvider.applyFilter(entry.key, null);
-                                      },
-                                    ),
-                                  );
-                                }).toList(),
-                              if (dataProvider.sortColumn != null)
-                                Chip(
-                                  backgroundColor: Colors.purple.shade50,
-                                  label: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text('${_columnLabels[dataProvider.sortColumn] ?? dataProvider.sortColumn}'),
-                                      SizedBox(width: 4),
-                                      Icon(
-                                        dataProvider.sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                                        size: 16,
-                                      ),
-                                    ],
+                              ...dataProvider.activeFilters.entries.map((entry) {
+                                String label = _columnLabels[entry.key] ?? entry.key;
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 8.0),
+                                  child: Chip(
+                                    backgroundColor: Colors.blue.shade50,
+                                    label: Text('$label: ${entry.value}'),
+                                    deleteIcon: Icon(Icons.close, size: 16),
+                                    onDeleted: () {
+                                      if (_filterControllers.containsKey(entry.key)) {
+                                        _filterControllers[entry.key]!.clear();
+                                      }
+                                      dataProvider.applyFilter(entry.key, null);
+                                    },
                                   ),
-                                  deleteIcon: Icon(Icons.close, size: 16),
-                                  onDeleted: () {
-                                    dataProvider.clearSort();
-                                  },
-                                ),
+                                );
+                              }).toList(),
                             ],
                           ),
                         ),
@@ -554,7 +547,6 @@ class _ListScreenState extends State<ListScreen> {
                     ],
                   ),
                 ),
-
               // Gap between filter bar and data card
               SizedBox(height: 12), // Reduced from 16 to 12
 
@@ -564,36 +556,62 @@ class _ListScreenState extends State<ListScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 12.0),
                   child: Card(
                     elevation: 4,
-                    color: Colors.white, // Pure white color
+                    color: Colors.white,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        topRight: Radius.circular(12),
+                        bottomLeft: _isScrolledToBottom ? Radius.circular(12) : Radius.zero,
+                        bottomRight: _isScrolledToBottom ? Radius.circular(12) : Radius.zero,
+                      ),
                     ),
+                    margin: _isScrolledToBottom ? EdgeInsets.only(bottom: 12) : EdgeInsets.zero,
                     child: Column(
                       children: [
-                        // Title - with specified font styling
+                        // Title - CHANGED: Now using plural_label from dataProvider's objectMetadata
                         Container(
-                          width: double.infinity,
-                          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                          child: Text(
-                            widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1),
-                            style: TextStyle(
-                              fontSize: 16, // As per requirement
-                              fontWeight: FontWeight.w400, // As per requirement
-                              color: Color(0xDE000000), // #000000DE as per requirement
-                            ),
-                          ),
-                        ),
+  width: double.infinity,
+  padding: EdgeInsets.fromLTRB(16, 8, 16, 8), // Reduced top padding from 16 to 8
+  child: Text(
+    // Use plural_label if available, otherwise capitalize type
+    dataProvider.objectMetadata?.pluralLabel ??
+        (widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)),
+    style: TextStyle(
+      fontSize: 16,
+      fontWeight: FontWeight.w400,
+      color: Color(0xDE000000),
+    ),
+  ),
+),
 
                         // Data rows
                         Expanded(
-                          child: ListView.builder(
-                            itemCount: items.length,
-                            padding: EdgeInsets.zero, // No bottom padding as requested
-                            itemBuilder: (ctx, index) {
-                              final item = items[index];
-
-                              return _buildDynamicItem(item, limitedVisibleColumns, _columnLabels);
+                          child: NotificationListener<ScrollNotification>(
+                            onNotification: (ScrollNotification scrollInfo) {
+                              if (scrollInfo is ScrollEndNotification) {
+                                // When scroll ends, check if we're at the bottom
+                                if (scrollInfo.metrics.pixels == scrollInfo.metrics.maxScrollExtent) {
+                                  if (!_isScrolledToBottom) {
+                                    setState(() {
+                                      _isScrolledToBottom = true;
+                                    });
+                                  }
+                                } else if (_isScrolledToBottom) {
+                                  setState(() {
+                                    _isScrolledToBottom = false;
+                                  });
+                                }
+                              }
+                              return true;
                             },
+                            child: ListView.builder(
+                              itemCount: items.length,
+                              padding: EdgeInsets.only(bottom: 16),
+                              itemBuilder: (ctx, index) {
+                                final item = items[index];
+                                return _buildDynamicItem(item, limitedVisibleColumns, _columnLabels);
+                              },
+                            ),
                           ),
                         ),
                       ],
@@ -601,9 +619,6 @@ class _ListScreenState extends State<ListScreen> {
                   ),
                 ),
               ),
-
-              // Gap below the card
-              SizedBox(height: 12), // Same as the gap above the card
             ],
           );
         },
@@ -650,7 +665,7 @@ class _ListScreenState extends State<ListScreen> {
                             Container(
                               width: 110, // Fixed width for all labels
                               child: Text(
-                                columnLabels[column] ?? column,
+                                columnLabels[column] ?? column, // Using the label from columnLabels
                                 style: labelStyle,
                                 overflow: TextOverflow.ellipsis,  // Handles long labels
                               ),
@@ -719,7 +734,7 @@ class _ListScreenState extends State<ListScreen> {
                         // Just show a confirmation
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('item updated successfully!'),
+                            content: Text('Item updated successfully!'),
                             backgroundColor: Colors.green,
                             duration: Duration(seconds: 2),
                             behavior: SnackBarBehavior.floating,

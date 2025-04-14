@@ -28,7 +28,7 @@ class DashboardProvider with ChangeNotifier {
     try {
       print('🔍 Fetching dashboard data...');
       final response = await http.get(
-        Uri.parse('http://88.222.241.78/v2/api/setup/dashboard'),
+        Uri.parse('https://qa.api.bussus.com/v2/api/setup/dashboard'),
         headers: {
           'Authorization': 'Bearer ${authProvider.token}',
           'Content-Type': 'application/json',

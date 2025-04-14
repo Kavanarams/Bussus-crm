@@ -65,7 +65,7 @@ class MyApp extends StatelessWidget {
             ),
             routes: {
               '/login': (ctx) => LoginScreen(),
-              '/home': (ctx) => HomeScreen(),
+              '/home': (ctx) => MainLayout(initialIndex: 0), // Updated to use MainLayout
             },
           );
         },

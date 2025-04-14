@@ -35,12 +35,18 @@ class MenuScreen extends StatelessWidget {
                     final dataProvider = Provider.of<DataProvider>(context, listen: false);
                     dataProvider.clearFilters();
 
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => MainLayout(initialIndex: 1, screenType: 'lead'),
-                      ),
-                    );
+                    // Use the global key to access the main layout
+                    if (mainLayoutKey.currentState != null) {
+                      mainLayoutKey.currentState!.navigateToTab(1, type: 'lead');
+                    } else {
+                      // Fallback if for some reason the key isn't available
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => MainLayout(initialIndex: 1, screenType: 'lead'),
+                        ),
+                      );
+                    }
                   }
               ),
               Divider(height: 1, thickness: 1),
@@ -52,14 +58,21 @@ class MenuScreen extends StatelessWidget {
                     final dataProvider = Provider.of<DataProvider>(context, listen: false);
                     dataProvider.clearFilters();
 
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => MainLayout(initialIndex: 1, screenType: 'account'),
-                      ),
-                    );
+                    // Use the global key to access the main layout
+                    if (mainLayoutKey.currentState != null) {
+                      mainLayoutKey.currentState!.navigateToTab(2, type: 'account');
+                    } else {
+                      // Fallback if for some reason the key isn't available
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => MainLayout(initialIndex: 2, screenType: 'account'),
+                        ),
+                      );
+                    }
                   }
               ),
+
               Divider(height: 1, thickness: 1),
               _buildListItem(
                   context,
@@ -80,6 +93,8 @@ class MenuScreen extends StatelessWidget {
       ),
     );
   }
+
+
 
   Widget _buildListItem(BuildContext context, String title, VoidCallback onTap) {
     return Card(

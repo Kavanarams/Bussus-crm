@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -8,30 +9,74 @@ import '../widgets/widget_factory.dart';
 import 'list_screen.dart';
 import 'menu_screen.dart';
 
+// Create a global key for the navigation state
+final GlobalKey<_MainLayoutState> mainLayoutKey = GlobalKey<_MainLayoutState>();
+
 class MainLayout extends StatefulWidget {
   final int initialIndex;
   final String? screenType;
 
-  const MainLayout({Key? key, this.initialIndex = 0, this.screenType}) : super(key: key);
+  // Remove the default key assignment to avoid duplicate key issues
+  MainLayout({Key? key, this.initialIndex = 0, this.screenType}) : super(key: key);
 
   @override
   State<MainLayout> createState() => _MainLayoutState();
 }
 
-class _MainLayoutState extends State<MainLayout> {
+class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   late int _currentIndex;
   late List<Widget> _screens;
+  bool _forceRebuild = false;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
     _initializeScreens();
+
+    // Register as an observer to catch app lifecycle changes
+    WidgetsBinding.instance.addObserver(this);
+
+    // Force a rebuild after the first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _forceRebuild = true;
+        });
+      }
+    });
+  }
+
+  void navigateToTab(int index, {String? type}) {
+    setState(() {
+      _currentIndex = index;
+      if (type != null && index == 1) {
+        // If we're navigating to the list screen (index 1) and have a type
+        _screens[1] = ListScreen(type: type);
+      } else if (type != null && index == 2) {
+        // If we're navigating to account screen (index 2) and have a type
+        _screens[2] = ListScreen(type: type);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Force rebuild when app resumes from background
+    if (state == AppLifecycleState.resumed && mounted) {
+      setState(() {});
+    }
   }
 
   void _initializeScreens() {
     _screens = [
-      const HomeScreen(),
+      const HomeScreenContent(), // Modified to use content-only version
       ListScreen(type: widget.screenType ?? 'lead'),
       ListScreen(type: 'account'),
       MenuScreen(),
@@ -40,47 +85,81 @@ class _MainLayoutState extends State<MainLayout> {
 
   @override
   Widget build(BuildContext context) {
+    // Print debug info
+    print('Building MainLayout, currentIndex: $_currentIndex, forceRebuild: $_forceRebuild');
+
     return Scaffold(
-      body: _screens[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-        type: BottomNavigationBarType.fixed,
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
+      // Use SafeArea to respect system UI elements
+      body: SafeArea(
+        // Specify bottom as false to allow our bottom nav to extend to the edge
+        bottom: false,
+        child: IndexedStack(
+          index: _currentIndex,
+          children: _screens,
+        ),
+      ),
+      // IMPORTANT: Force the bottom nav to be visible with key and physics
+      bottomNavigationBar: Material(
+        elevation: 16, // High elevation for visibility
+        color: Colors.white,
+        child: Container(
+          decoration: BoxDecoration(
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 8,
+                spreadRadius: 1,
+              ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Leads',
+          child: BottomNavigationBar(
+            key: ValueKey('bottom_nav_bar_${_forceRebuild}'), // Force rebuilding with key
+            currentIndex: _currentIndex,
+            onTap: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.white,
+            selectedItemColor: Colors.blue,
+            unselectedItemColor: Colors.grey,
+            showUnselectedLabels: true,
+            elevation: 24, // Maximum elevation
+            items: [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.home),
+                label: 'Home',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.person),
+                label: 'Leads',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.business),
+                label: 'Accounts',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.menu),
+                label: 'Menu',
+              ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.business),
-            label: 'Accounts',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.menu),
-            label: 'Menu',
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+// Create a content-only version of HomeScreen (no Scaffold)
+class HomeScreenContent extends StatefulWidget {
+  const HomeScreenContent({Key? key}) : super(key: key);
 
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  _HomeScreenContentState createState() => _HomeScreenContentState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenContentState extends State<HomeScreenContent> {
   @override
   void initState() {
     super.initState();
@@ -88,15 +167,17 @@ class _HomeScreenState extends State<HomeScreen> {
     // Load dashboard when the screen is initialized
     WidgetsBinding.instance.addPostFrameCallback((_) {
       print('🔄 Loading dashboard data...');
+      if (!mounted) return;
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final dashboardProvider = Provider.of<DashboardProvider>(context, listen: false);
+      final dashboardProvider = Provider.of<DashboardProvider>(
+          context, listen: false);
       dashboardProvider.initialize(authProvider);
     });
   }
 
   Widget _buildWidget(DashboardItem item) {
     print('Building widget: ${item.title} (${item.type})');
-    
+
     switch (item.type) {
       case 'chart':
         return _buildChartWidget(item);
@@ -162,36 +243,37 @@ class _HomeScreenState extends State<HomeScreen> {
       PieChartData(
         sections: List.generate(
           labels.length,
-          (index) => PieChartSectionData(
-            value: (values[index] ?? 0).toDouble(),
-            title: '${labels[index]}',
-            radius: 100,
-            titleStyle: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
+              (index) =>
+              PieChartSectionData(
+                value: (values[index] ?? 0).toDouble(),
+                title: '${labels[index]}',
+                radius: 100,
+                titleStyle: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
         ),
         pieTouchData: PieTouchData(
           touchCallback: (FlTouchEvent event, pieTouchResponse) {
-
             if (pieTouchResponse?.touchedSection != null) {
               final section = pieTouchResponse!.touchedSection!;
               final index = section.touchedSectionIndex;
               if (index >= 0 && index < labels.length) {
                 showDialog(
                   context: context,
-                  builder: (context) => AlertDialog(
-                    title: Text(labels[index].toString()),
-                    content: Text('${values[index]} leads'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text('Close'),
+                  builder: (context) =>
+                      AlertDialog(
+                        title: Text(labels[index].toString()),
+                        content: Text('${values[index]} leads'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: Text('Close'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
                 );
               }
             }
@@ -229,7 +311,8 @@ class _HomeScreenState extends State<HomeScreen> {
           LineChartBarData(
             spots: List.generate(
               values.length,
-              (index) => FlSpot(index.toDouble(), (values[index] ?? 0).toDouble()),
+                  (index) =>
+                  FlSpot(index.toDouble(), (values[index] ?? 0).toDouble()),
             ),
             isCurved: true,
             color: Colors.blue,
@@ -289,17 +372,18 @@ class _HomeScreenState extends State<HomeScreen> {
         borderData: FlBorderData(show: true),
         barGroups: List.generate(
           values.length,
-          (index) => BarChartGroupData(
-            x: index,
-            barRods: [
-              BarChartRodData(
-                toY: (values[index] ?? 0).toDouble(),
-                color: Colors.blue,
-                width: 20,
-                borderRadius: BorderRadius.circular(4),
+              (index) =>
+              BarChartGroupData(
+                x: index,
+                barRods: [
+                  BarChartRodData(
+                    toY: (values[index] ?? 0).toDouble(),
+                    color: Colors.blue,
+                    width: 20,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ],
               ),
-            ],
-          ),
         ),
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
@@ -378,113 +462,120 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     print('🏗️ Building HomeScreen');
-    return Scaffold(
-      backgroundColor: Color(0xFFE0F7FA),
-      appBar: AppBar(
-        title: Text('Home'),
-        automaticallyImplyLeading: false, // Remove back arrow
-        backgroundColor: Colors.blue[700], // Lighter blue color
-        foregroundColor: Colors.white, // Dark text for better contrast
-        actions: [
-          IconButton(
-            icon: Icon(Icons.refresh),
-            onPressed: () {
-              print('🔄 Refresh button pressed');
-              final authProvider = Provider.of<AuthProvider>(context, listen: false);
-              final dashboardProvider = Provider.of<DashboardProvider>(context, listen: false);
-              dashboardProvider.refreshDashboard(authProvider);
-            },
+    return Column(
+      children: [
+        AppBar(
+          title: Text('Home'),
+          automaticallyImplyLeading: false,
+          backgroundColor: Colors.blue[700],
+          foregroundColor: Colors.white,
+          actions: [
+            IconButton(
+              icon: Icon(Icons.refresh),
+              onPressed: () {
+                print('🔄 Refresh button pressed');
+                final authProvider = Provider.of<AuthProvider>(
+                    context, listen: false);
+                final dashboardProvider = Provider.of<DashboardProvider>(
+                    context, listen: false);
+                dashboardProvider.refreshDashboard(authProvider);
+              },
             ),
           ],
         ),
-        body: Consumer<DashboardProvider>(
-        builder: (context, dashboardProvider, child) {
-          print('📊 Dashboard state: isLoading=${dashboardProvider.isLoading}, error=${dashboardProvider.error}, items=${dashboardProvider.items.length}');
-          
-    if (dashboardProvider.isLoading) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Loading dashboard...'),
-                ],
-              ),
-            );
-    }
+        Expanded(
+          child: Container(
+            color: Color(0xFFE0F7FA),
+            child: Consumer<DashboardProvider>(
+              builder: (context, dashboardProvider, child) {
+                // Your existing consumer logic...
 
-    if (dashboardProvider.error.isNotEmpty) {
-    return Center(
-    child: Column(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: [
-                  Text(
-                    dashboardProvider.error,
-                    style: TextStyle(color: Colors.red),
-                    textAlign: TextAlign.center,
-                  ),
-                  SizedBox(height: 16),
-    ElevatedButton(
-                    onPressed: () {
-                      print('🔄 Retrying dashboard load...');
-                      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                      dashboardProvider.refreshDashboard(authProvider);
+                print('📊 Dashboard state: isLoading=${dashboardProvider
+                    .isLoading}, error=${dashboardProvider
+                    .error}, items=${dashboardProvider.items.length}');
+
+                if (dashboardProvider.isLoading) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('Loading dashboard...'),
+                      ],
+                    ),
+                  );
+                }
+
+                if (dashboardProvider.error.isNotEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          dashboardProvider.error,
+                          style: TextStyle(color: Colors.red),
+                          textAlign: TextAlign.center,
+                        ),
+                        SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () {
+                            print('🔄 Retrying dashboard load...');
+                            final authProvider = Provider.of<AuthProvider>(
+                                context, listen: false);
+                            dashboardProvider.refreshDashboard(authProvider);
+                          },
+                          child: Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                if (dashboardProvider.items.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('No dashboard items available'),
+                        SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () {
+                            print('🔄 Refreshing empty dashboard...');
+                            final authProvider = Provider.of<AuthProvider>(
+                                context, listen: false);
+                            dashboardProvider.refreshDashboard(authProvider);
+                          },
+                          child: Text('Refresh'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    print('🔄 Pull-to-refresh triggered');
+                    final authProvider = Provider.of<AuthProvider>(
+                        context, listen: false);
+                    await dashboardProvider.refreshDashboard(authProvider);
+                  },
+                  child: ListView.builder(
+                    itemCount: dashboardProvider.items.length,
+                    itemBuilder: (context, index) {
+                      final item = dashboardProvider.items[index];
+                      print(
+                          '📦 Building widget ${index + 1}: ${item.title} (${item
+                              .type})');
+                      return _buildWidget(item);
                     },
-                    child: Text('Retry'),
-    ),
-    ],
-    ),
-    );
-    }
-
-    if (dashboardProvider.items.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('No dashboard items available'),
-                  SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      print('🔄 Refreshing empty dashboard...');
-                      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                      dashboardProvider.refreshDashboard(authProvider);
-                    },
-                    child: Text('Refresh'),
                   ),
-                ],
-              ),
-            );
-          }
-
-          return RefreshIndicator(
-            onRefresh: () async {
-              print('🔄 Pull-to-refresh triggered');
-              final authProvider = Provider.of<AuthProvider>(context, listen: false);
-              await dashboardProvider.refreshDashboard(authProvider);
-            },
-            child: ListView.builder(
-    itemCount: dashboardProvider.items.length,
-    itemBuilder: (context, index) {
-    final item = dashboardProvider.items[index];
-                print('📦 Building widget ${index + 1}: ${item.title} (${item.type})');
-                return _buildWidget(item);
+                );
               },
             ),
-          );
-        },
-      ),
+          ),
+        ),
+      ],
     );
-  }
-}
-
-// Wrapper to use MainLayout
-class HomeScreenWrapper extends StatelessWidget {
-  const HomeScreenWrapper({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return const MainLayout();
   }
 }

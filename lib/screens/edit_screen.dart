@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/data_provider.dart';
 import '../models/dynamic_model.dart';
+import 'details_screen.dart';
 
 class EditItemScreen extends StatefulWidget {
   final String type;
@@ -135,11 +136,18 @@ class _EditItemScreenState extends State<EditItemScreen> {
       );
 
       // Rest of the method remains the same
-      if (result['success']) {
-        // ScaffoldMessenger.of(context).showSnackBar(
-        //         //     SnackBar(content: Text('Item updated successfully!'))
-        //         // );
-        Navigator.pop(context, true);
+      if (result['success'])  {
+        // Navigate to the details screen instead of just popping
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DetailsScreen(
+              type: widget.type,
+              itemId: widget.itemId,
+            ),
+          ),
+        );
+
       } else {
         setState(() {
           _error = result['message'];

@@ -157,6 +157,32 @@ class _NewItemScreenState extends State<NewItemScreen> {
 
     return result;
   }
+  Widget _buildErrorDisplay() {
+    if (_error == null) return SizedBox.shrink();
+
+    return Container(
+      margin: EdgeInsets.symmetric(vertical: 16),
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, color: Colors.red),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _error!,
+              style: TextStyle(color: Colors.red.shade800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _submitForm() async {
     // Debug print current values
@@ -199,13 +225,11 @@ class _NewItemScreenState extends State<NewItemScreen> {
 
           // Only include non-empty date values
           if (controller.text.isNotEmpty) {
-            // You might need to convert the date format based on your API requirements
-            // Example: convert YYYY-MM-DD to MM/DD/YYYY or to ISO format
             formData[key] = controller.text; // Use as is, or convert if needed
           }
         }
         // Special handling for phone field
-        if (key == "phone") {
+        else if (key == "phone") {
           // Only include non-empty phone values
           if (controller.text.isNotEmpty) {
             formData[key] = controller.text;
@@ -266,22 +290,53 @@ class _NewItemScreenState extends State<NewItemScreen> {
         Navigator.of(context).pop();
       } else {
         // Handle error
+        String errorMessage = result['message'] ?? 'Failed to create item.';
+
+        // Check for duplicate email error
+        if (errorMessage.contains('duplicate key value') &&
+            errorMessage.contains('email')) {
+          errorMessage = 'This email is already registered. Please use a different email.';
+        }
+
         setState(() {
-          _error = result['message'] ?? 'Failed to create item.';
+          _error = errorMessage;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_error!), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(_error!),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     } catch (e) {
+      String errorMessage = e.toString();
+
+      // Check for specific error patterns in the exception
+      if (errorMessage.contains('duplicate key value') &&
+          errorMessage.contains('email')) {
+        errorMessage = 'This email is already registered. Please use a different email.';
+      } else if (errorMessage.contains('duplicate key value') &&
+          errorMessage.contains('phone')) {
+        errorMessage = 'This phone number is already registered. Please use a different phone number.';
+      } else if (errorMessage.contains('duplicate key value')) {
+        errorMessage = 'This record already exists in the system.';
+      }
+
       setState(() {
-        _error = 'Error occurred: $e';
+        _error = errorMessage;
       });
       print('❌ Error creating new item: $e');
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_error!), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text(_error!),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     } finally {
       setState(() {
@@ -367,14 +422,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
               ]),
 
               // Error message
-              if (_error != null) ...[
-                SizedBox(height: 16),
-                Container(
-                  padding: EdgeInsets.all(8),
-                  color: Colors.red.shade50,
-                  child: Text(_error!, style: TextStyle(color: Colors.red)),
-                ),
-              ],
+              _buildErrorDisplay(),
 
               // Submit button
               SizedBox(height: 24),

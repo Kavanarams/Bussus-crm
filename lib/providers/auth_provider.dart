@@ -46,7 +46,7 @@ class AuthProvider with ChangeNotifier {
     try {
       // Make a request to a simple endpoint that requires authentication
       final response = await http.get(
-        Uri.parse('http://88.222.241.78/v2/api/listview/lead'), // Adjust this endpoint as needed
+        Uri.parse('https://qa.api.bussus.com/v2/api/listview/lead'), // Adjust this endpoint as needed
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -65,7 +65,7 @@ class AuthProvider with ChangeNotifier {
       print('🔐 Attempting login with username: $username');
 
       final response = await http.post(
-        Uri.parse('http://88.222.241.78/v2/login'),
+        Uri.parse('https://qa.api.bussus.com/v2/login'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'email': username,
