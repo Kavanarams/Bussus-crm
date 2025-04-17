@@ -8,6 +8,7 @@ import '../providers/data_provider.dart';
 import '../models/dynamic_model.dart';
 import 'edit_screen.dart';
 import 'newtask.dart';
+import 'AllActivitiesScreen.dart';
 
 class DetailsScreen extends StatefulWidget {
   final String type;
@@ -302,22 +303,41 @@ Widget build(BuildContext context) {
                       onPressed: () async {
                         // Delete functionality (unchanged)
                         final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: Text('Confirm Delete'),
-                            content: Text('Are you sure you want to delete this item?'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: Text('Cancel'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                child: Text('Delete', style: TextStyle(color: Colors.red)),
-                              ),
-                            ],
-                          ),
-                        );
+  context: context,
+  builder: (context) => AlertDialog(
+    backgroundColor: Colors.white, // Match card color
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(8), // Match card's border radius
+    ),
+    title: Text('Confirm Delete'),
+    content: Text('Are you sure you want to delete this item?'),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context, false),
+        child: Text('Cancel', style: TextStyle(color: Colors.black)),
+        style: TextButton.styleFrom(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20), // Oval shape
+            side: BorderSide(color: Colors.grey.shade300), // Optional border
+          ),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        ),
+      ),
+      TextButton(
+        onPressed: () => Navigator.pop(context, true),
+        child: Text('Delete', style: TextStyle(color: Colors.white)),
+        style: TextButton.styleFrom(
+          backgroundColor: Colors.blue,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20), // Oval shape
+          ),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        ),
+      ),
+    ],
+  ),
+);
 
                         if (confirm == true) {
                           // Delete code (unchanged)
@@ -646,13 +666,18 @@ Widget build(BuildContext context) {
     }
   }
 
- Widget _buildActivitiesSection() {
+ 
+Widget _buildActivitiesSection() {
   // Count open activities (not completed)
   int activitiesCount = _activities.length;
+  // Limit the number of tasks to show in preview
+  final tasksToShow = _activitiesSectionExpanded ? 
+      (_activities.length > 2 ? 2 : _activities.length) : 0;
+  final hasMoreTasks = _activities.length > 2;
   
   return Card(
-    margin: const EdgeInsets.symmetric(vertical: 8), // Consistent vertical margin
-    elevation: 2, // Add consistent elevation
+    margin: const EdgeInsets.symmetric(vertical: 8),
+    elevation: 2,
     color: Colors.white,
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(8),
@@ -667,7 +692,7 @@ Widget build(BuildContext context) {
             });
           },
           child: Padding(
-            padding: EdgeInsets.all(12), // Match padding with other sections
+            padding: EdgeInsets.all(12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -708,7 +733,7 @@ Widget build(BuildContext context) {
           ),
         ),
         
-        // Activities list - only visible when expanded
+        // Activities list - only visible when expanded, limited to 2 items
         if (_activitiesSectionExpanded) ...[
           Divider(height: 1),
           _isLoadingActivities
@@ -729,87 +754,130 @@ Widget build(BuildContext context) {
                         ),
                       ),
                     )
-                  : ListView.separated(
-                      physics: NeverScrollableScrollPhysics(),
-                      shrinkWrap: true,
-                      itemCount: _activities.length,
-                      separatorBuilder: (context, index) => Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final activity = _activities[index];
-                        return ListTile(
-                          contentPadding: EdgeInsets.all(16),
-                          title: Text(
-                            activity['subject'] ?? 'No Subject',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Text(
-                                    'Due Date: ',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey[600],
-                                    ),
+                  : Column(
+                      children: [
+                        ListView.separated(
+                          physics: NeverScrollableScrollPhysics(),
+                          shrinkWrap: true,
+                          itemCount: tasksToShow,
+                          separatorBuilder: (context, index) => Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final activity = _activities[index];
+                            return _buildActivityItem(activity);
+                          },
+                        ),
+                        
+                        // Add "View More" button if there are more than 2 activities
+                        if (hasMoreTasks) ...[
+                          Divider(height: 1),
+                          InkWell(
+                            onTap: () {
+                              // Navigate to the all activities screen
+                              Navigator.push(
+                                context, 
+                                MaterialPageRoute(
+                                  builder: (context) => AllActivitiesScreen(
+                                    activities: _activities, 
+                                    objectType: widget.type,
+                                    objectName: _details['name'] ?? 'Unknown',
                                   ),
-                                  Text(
-                                    '${activity['due_date'] ?? 'N/A'}',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.black,
-                                    ),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              width: double.infinity,
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                              child: Center(
+                                child: Text(
+                                  'View All ${_activities.length} Activities',
+                                  style: TextStyle(
+                                    color: Colors.blue[700],
+                                    fontWeight: FontWeight.bold,
                                   ),
-                                ],
-                              ),
-                              SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Text(
-                                    'Status: ',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                  Text(
-                                    '${activity['status'] ?? 'N/A'}',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.black,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          trailing: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: _getStatusColor(activity['status']),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              activity['status'] ?? '',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
-                        );
-                      },
+                        ],
+                      ],
                     ),
         ],
       ],
+    ),
+  );
+}
+
+// Create a helper method to build activity items to avoid code duplication
+Widget _buildActivityItem(Map<String, dynamic> activity) {
+  return ListTile(
+    dense: true,
+    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    title: Text(
+      activity['subject'] ?? 'No Subject',
+      style: TextStyle(
+        fontWeight: FontWeight.bold,
+        fontSize: 16,
+      ),
+    ),
+    subtitle: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: 4),
+        Row(
+          children: [
+            Text(
+              'Due Date: ',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+            Text(
+              '${activity['due_date'] ?? 'N/A'}',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.black,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 2),
+        Row(
+          children: [
+            Text(
+              'Status: ',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+            Text(
+              '${activity['status'] ?? 'N/A'}',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.black,
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+    trailing: Container(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: _getStatusColor(activity['status']),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        activity['status'] ?? '',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     ),
   );
 }

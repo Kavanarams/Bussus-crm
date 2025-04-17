@@ -386,22 +386,6 @@ String? getColumnLabel(String columnName) {
     await applyFilters(filters, _token, _type);
   }
 
-  // Convert filter condition to API query parameters
-  Map<String, String> _buildFilterQueryParams() {
-    Map<String, String> queryParams = {};
-    
-    _activeFilters.forEach((field, value) {
-      // Check if the value contains an operator prefix (like eq:value)
-      if (value is String && value.contains(':')) {
-        queryParams[field] = value;
-      } else {
-        // Default to equals operator if none specified
-        queryParams[field] = 'equals:$value';
-      }
-    });
-    
-    return queryParams;
-  }
 
   Future<void> applyFilter(String field, String? value) async {
     Map<String, String> filters = {};

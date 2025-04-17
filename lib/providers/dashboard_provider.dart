@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../models/dashboard_item.dart';
-import '../config/api_config.dart';
+// import '../config/api_config.dart';
 import 'auth_provider.dart';
 
 class DashboardProvider with ChangeNotifier {
@@ -112,73 +112,6 @@ class DashboardProvider with ChangeNotifier {
     }
   }
 
-  Map<String, dynamic> _createDefaultConfig(String componentName) {
-    // Create default configuration based on component name
-    if (componentName.toLowerCase().contains('card')) {
-      return {
-        'type': 'lead',
-        'preview': 'Recent leads will be shown here',
-      };
-    } else if (componentName.toLowerCase().contains('line')) {
-      return {
-        'chartType': 'line',
-        'data': [
-          {'x': 'Jan', 'y': 10},
-          {'x': 'Feb', 'y': 15},
-          {'x': 'Mar', 'y': 20},
-        ],
-      };
-    } else if (componentName.toLowerCase().contains('pie')) {
-      return {
-        'chartType': 'pie',
-        'data': [
-          {'label': 'Category 1', 'value': 30},
-          {'label': 'Category 2', 'value': 70},
-        ],
-      };
-    } else {
-      return {
-        'total': '100',
-        'active': '75',
-        'pending': '25',
-      };
-    }
-  }
-
-  Map<String, dynamic> _createDefaultData(String componentName) {
-    // Create default data based on component name
-    if (componentName.toLowerCase().contains('card')) {
-      return {
-        'items': [
-          {'id': 1, 'title': 'Sample Lead 1', 'status': 'New'},
-          {'id': 2, 'title': 'Sample Lead 2', 'status': 'In Progress'},
-        ],
-      };
-    } else if (componentName.toLowerCase().contains('line')) {
-      return {
-        'points': [
-          {'x': 0, 'y': 10},
-          {'x': 1, 'y': 15},
-          {'x': 2, 'y': 20},
-        ],
-      };
-    } else if (componentName.toLowerCase().contains('pie')) {
-      return {
-        'sections': [
-          {'label': 'Category 1', 'value': 30},
-          {'label': 'Category 2', 'value': 70},
-        ],
-      };
-    } else {
-      return {
-        'stats': {
-          'total': 100,
-          'active': 75,
-          'pending': 25,
-        },
-      };
-    }
-  }
 
   Future<void> refreshDashboard(AuthProvider authProvider) async {
     await fetchDashboard(authProvider);

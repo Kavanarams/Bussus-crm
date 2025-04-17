@@ -95,7 +95,7 @@ class _SortPageState extends State<SortPage> {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w500,
-                      color: Color(0xFF0D47A1),
+                      color: const Color.fromARGB(211, 0, 0, 0),
                     ),
                   ),
                 ),
@@ -115,14 +115,14 @@ class _SortPageState extends State<SortPage> {
                         title: Text(
                           label,
                           style: TextStyle(
-                            color: isActive ? Color(0xFF0D47A1) : Colors.black87,
+                            color: isActive ? Color.fromARGB(234, 9, 0, 0) : Colors.black87,
                             fontWeight: isActive ? FontWeight.w500 : FontWeight.normal,
                           ),
                         ),
                         trailing: isActive
                             ? Icon(
                                 _tempSortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                                color: Color(0xFF0D47A1),
+                                color: Color.fromARGB(219, 0, 4, 10),
                               )
                             : null,
                         onTap: () {
