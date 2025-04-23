@@ -6,6 +6,7 @@ import '../models/dynamic_model.dart';
 import 'details_screen.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../theme/app_button_styles.dart';
 
 class EditItemScreen extends StatefulWidget {
   final String type;
@@ -487,34 +488,27 @@ void _ensurePicklistValuesExist() {
                 Column(
                   children: [
                     SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(context),
-                            style: OutlinedButton.styleFrom(
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                              side: BorderSide(color: Colors.black),
-                              backgroundColor: Colors.white,
-                              foregroundColor: Colors.black,
-                            ),
-                            child: Text("Cancel"),
-                          ),
+                    // Updated button row with global styles
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: AppButtonStyles.secondaryButton,
+                          child: Text("Cancel"),
                         ),
-                        SizedBox(width: 16),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _saveChanges,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                            ),
-                            child: Text("Save", style: TextStyle(color: Colors.white)),
-                          ),
+                      ),
+                      SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _saveChanges,
+                          style: AppButtonStyles.primaryButton,
+                          child: Text("Save"),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
+                  ),
                   ],
                 ),
               ],

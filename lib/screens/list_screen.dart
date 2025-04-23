@@ -12,6 +12,10 @@ import 'dart:async';
 import 'filter_logic.dart' as filterlogic;
 import 'filterpage.dart' as filter;
 import 'sortpage.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_text_styles.dart';
+import '../theme/app_dimensions.dart';
+import '../theme/app_decorations.dart';
 
 class ListScreen extends StatefulWidget {
   final String type;
@@ -239,27 +243,27 @@ class _ListScreenState extends State<ListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFE0F7FA),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         // Conditional app bar content
         title: isSearchMode
             ? TextField(
           controller: _searchController,
           focusNode: _searchFocusNode,
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: AppColors.textWhite),
           decoration: InputDecoration(
             hintText: 'Search...',
-            hintStyle: TextStyle(color: Colors.white70),
+            hintStyle: TextStyle(color: const Color.fromARGB(179, 13, 13, 13)),
             border: InputBorder.none,
           ),
           onChanged: _handleSearchTextChanged,
         )
             : Text(
           'List View',
-          style: TextStyle(color: Colors.white, fontSize: 16),
+          style: AppTextStyles.appBarTitle,
         ),
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Colors.white),
+          icon: Icon(Icons.arrow_back),
           onPressed: () {
             if (isSearchMode) {
               _toggleSearchMode();
@@ -277,17 +281,17 @@ class _ListScreenState extends State<ListScreen> {
         actions: [
           if (!isSearchMode) ...[
             IconButton(
-              icon: Icon(Icons.refresh, color: Colors.white),
+              icon: Icon(Icons.refresh),
               onPressed: () {
                 _loadData();
               },
             ),
             IconButton(
-              icon: Icon(Icons.search, color: Colors.white),
+              icon: Icon(Icons.search),
               onPressed: _toggleSearchMode,
             ),
             IconButton(
-              icon: Icon(Icons.notifications, color: Colors.white),
+              icon: Icon(Icons.notifications),
               onPressed: () {
                 // Notifications functionality
               },
@@ -295,7 +299,7 @@ class _ListScreenState extends State<ListScreen> {
           ],
           if (isSearchMode) ...[
             IconButton(
-              icon: Icon(Icons.close, color: Colors.white),
+              icon: Icon(Icons.close),
               onPressed: () {
                 _searchController.clear();
                 _handleSearchTextChanged('');
@@ -310,8 +314,8 @@ class _ListScreenState extends State<ListScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Loading data...'),
+            SizedBox(height: AppDimensions.spacingL),
+            Text('Loading data...', style: AppTextStyles.bodyMedium),
           ],
         ),
       )
@@ -328,8 +332,8 @@ class _ListScreenState extends State<ListScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Loading data...'),
+                  SizedBox(height: AppDimensions.spacingL),
+                  Text('Loading data...', style: AppTextStyles.bodyMedium),
                 ],
               ),
             );
@@ -340,14 +344,14 @@ class _ListScreenState extends State<ListScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.error_outline, color: Colors.red, size: 48),
-                  SizedBox(height: 16),
+                  Icon(Icons.error_outline, color: AppColors.error, size: 48),
+                  SizedBox(height: AppDimensions.spacingL),
                   Text(
                     dataProvider.error!,
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.red),
+                    style: TextStyle(color: AppColors.error),
                   ),
-                  SizedBox(height: 16),
+                  SizedBox(height: AppDimensions.spacingL),
                   ElevatedButton(
                     onPressed: () {
                       _loadData();
@@ -361,7 +365,7 @@ class _ListScreenState extends State<ListScreen> {
 
           final items = dataProvider.items;
           if (items.isEmpty) {
-            return Center(child: Text('No data available'));
+            return Center(child: Text('No data available', style: AppTextStyles.bodyMedium));
           }
 
           final visibleColumns = dataProvider.visibleColumns;
@@ -384,10 +388,13 @@ class _ListScreenState extends State<ListScreen> {
               // Filter, Sort, New bar - reduced vertical height and spacing
               Container(
                 width: double.infinity,
-                color: Colors.white,
-                padding: EdgeInsets.symmetric(vertical: 8, horizontal: 24), // Reduced vertical padding
+                color: AppColors.cardBackground,
+                padding: EdgeInsets.symmetric(
+                  vertical: AppDimensions.spacingS,
+                  horizontal: AppDimensions.spacingXxl
+                ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround, // More compact spacing
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     // Filter icon with label below - using filled filter icon
                     GestureDetector(
@@ -397,19 +404,25 @@ class _ListScreenState extends State<ListScreen> {
                         children: [
                           Stack(
                             children: [
-                              CircleAvatar(
-                                backgroundColor: Colors.blue.withOpacity(0.2),
-                                radius: 16, // Slightly smaller
-                                child: Icon(Icons.filter_alt, color: Color(0xFF0D47A1), size: 18), // Changed to filter_alt (filled filter)
+                              Container(
+                                decoration: AppDecorations.circleButtonDecoration,
+                                child: Padding(
+                                  padding: EdgeInsets.all(AppDimensions.spacingS),
+                                  child: Icon(
+                                    Icons.filter_alt, 
+                                    color: AppColors.primaryDark,
+                                    size: AppDimensions.iconM
+                                  ),
+                                ),
                               ),
                               if (dataProvider.activeFilters.isNotEmpty)
                                 Positioned(
                                   right: 0,
                                   top: 0,
                                   child: Container(
-                                    padding: EdgeInsets.all(2),
+                                    padding: EdgeInsets.all(AppDimensions.spacingXxs),
                                     decoration: BoxDecoration(
-                                      color: Colors.red,
+                                      color: AppColors.error,
                                       shape: BoxShape.circle,
                                     ),
                                     constraints: BoxConstraints(
@@ -420,14 +433,10 @@ class _ListScreenState extends State<ListScreen> {
                                 ),
                             ],
                           ),
-                          SizedBox(height: 2), // Reduced spacing
+                          SizedBox(height: AppDimensions.spacingXxs),
                           Text(
                             'Filter',
-                            style: TextStyle(
-                              fontSize: 11, // Slightly smaller
-                              color: Color(0xFF0D47A1),
-                              fontWeight: FontWeight.w500,
-                            ),
+                            style: AppTextStyles.smallActionText,
                           ),
                         ],
                       ),
@@ -441,19 +450,25 @@ class _ListScreenState extends State<ListScreen> {
                         children: [
                           Stack(
                             children: [
-                              CircleAvatar(
-                                backgroundColor: Colors.blue.withOpacity(0.2),
-                                radius: 16, // Slightly smaller
-                                child: Icon(Icons.sort, color: Color(0xFF0D47A1), size: 18),
+                              Container(
+                                decoration: AppDecorations.circleButtonDecoration,
+                                child: Padding(
+                                  padding: EdgeInsets.all(AppDimensions.spacingS),
+                                  child: Icon(
+                                    Icons.sort,
+                                    color: AppColors.primaryDark,
+                                    size: AppDimensions.iconM
+                                  ),
+                                ),
                               ),
                               if (dataProvider.sortColumn != null)
                                 Positioned(
                                   right: 0,
                                   top: 0,
                                   child: Container(
-                                    padding: EdgeInsets.all(2),
+                                    padding: EdgeInsets.all(AppDimensions.spacingXxs),
                                     decoration: BoxDecoration(
-                                      color: Colors.red,
+                                      color: AppColors.error,
                                       shape: BoxShape.circle,
                                     ),
                                     constraints: BoxConstraints(
@@ -464,14 +479,10 @@ class _ListScreenState extends State<ListScreen> {
                                 ),
                             ],
                           ),
-                          SizedBox(height: 2), // Reduced spacing
+                          SizedBox(height: AppDimensions.spacingXxs),
                           Text(
                             'Sort',
-                            style: TextStyle(
-                              fontSize: 11, // Slightly smaller
-                              color: Color(0xFF0D47A1),
-                              fontWeight: FontWeight.w500,
-                            ),
+                            style: AppTextStyles.smallActionText,
                           ),
                         ],
                       ),
@@ -491,18 +502,18 @@ class _ListScreenState extends State<ListScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           CircleAvatar(
-                            backgroundColor: Colors.blue,
-                            radius: 16, // Slightly smaller
-                            child: Icon(Icons.add, color: Colors.white, size: 18),
+                            backgroundColor: AppColors.primary,
+                            radius: AppDimensions.circleRadius,
+                            child: Icon(
+                              Icons.add,
+                              color: AppColors.textWhite,
+                              size: AppDimensions.iconM
+                            ),
                           ),
-                          SizedBox(height: 2), // Reduced spacing
+                          SizedBox(height: AppDimensions.spacingXxs),
                           Text(
                             'New',
-                            style: TextStyle(
-                              fontSize: 11, // Slightly smaller
-                              color: Color(0xFF0D47A1),
-                              fontWeight: FontWeight.w500,
-                            ),
+                            style: AppTextStyles.smallActionText,
                           ),
                         ],
                       ),
@@ -515,7 +526,10 @@ class _ListScreenState extends State<ListScreen> {
               if (dataProvider.activeFilters.isNotEmpty)
                 Container(
                   color: Colors.grey.shade100,
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: AppDimensions.spacingL,
+                    vertical: AppDimensions.spacingXs
+                  ),
                   child: Row(
                     children: [
                       Expanded(
@@ -526,11 +540,11 @@ class _ListScreenState extends State<ListScreen> {
                               ...dataProvider.activeFilters.entries.map((entry) {
                                 String label = _columnLabels[entry.key] ?? entry.key;
                                 return Padding(
-                                  padding: const EdgeInsets.only(right: 8.0),
+                                  padding: EdgeInsets.only(right: AppDimensions.spacingS),
                                   child: Chip(
-                                    backgroundColor: Colors.blue.shade50,
+                                    backgroundColor: AppColors.primaryLighter.withOpacity(0.3),
                                     label: Text('$label: ${entry.value}'),
-                                    deleteIcon: Icon(Icons.close, size: 16),
+                                    deleteIcon: Icon(Icons.close, size: AppDimensions.iconS),
                                     onDeleted: () {
                                       if (_filterControllers.containsKey(entry.key)) {
                                         _filterControllers[entry.key]!.clear();
@@ -548,41 +562,42 @@ class _ListScreenState extends State<ListScreen> {
                   ),
                 ),
               // Gap between filter bar and data card
-              SizedBox(height: 12), // Reduced from 16 to 12
+              SizedBox(height: AppDimensions.spacingM),
 
               // Data card
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                  padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingM),
                   child: Card(
-                    elevation: 4,
-                    color: Colors.white,
+                    elevation: AppDimensions.elevationL,
+                    color: AppColors.cardBackground,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(12),
-                        topRight: Radius.circular(12),
-                        bottomLeft: _isScrolledToBottom ? Radius.circular(12) : Radius.zero,
-                        bottomRight: _isScrolledToBottom ? Radius.circular(12) : Radius.zero,
+                        topLeft: Radius.circular(AppDimensions.radiusM),
+                        topRight: Radius.circular(AppDimensions.radiusM),
+                        bottomLeft: _isScrolledToBottom ? Radius.circular(AppDimensions.radiusM) : Radius.zero,
+                        bottomRight: _isScrolledToBottom ? Radius.circular(AppDimensions.radiusM) : Radius.zero,
                       ),
                     ),
-                    margin: _isScrolledToBottom ? EdgeInsets.only(bottom: 12) : EdgeInsets.zero,
+                    margin: _isScrolledToBottom ? EdgeInsets.only(bottom: AppDimensions.spacingM) : EdgeInsets.zero,
                     child: Column(
                       children: [
-                        // Title - CHANGED: Now using plural_label from dataProvider's objectMetadata
+                        // Title - using plural_label from dataProvider's objectMetadata
                         Container(
-  width: double.infinity,
-  padding: EdgeInsets.fromLTRB(16, 8, 16, 8), // Reduced top padding from 16 to 8
-  child: Text(
-    // Use plural_label if available, otherwise capitalize type
-    dataProvider.objectMetadata?.pluralLabel ??
-        (widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)),
-    style: TextStyle(
-      fontSize: 16,
-      fontWeight: FontWeight.w400,
-      color: Color(0xDE000000),
-    ),
-  ),
-),
+                          width: double.infinity,
+                          padding: EdgeInsets.fromLTRB(
+                            AppDimensions.spacingL,
+                            AppDimensions.spacingS,
+                            AppDimensions.spacingL,
+                            AppDimensions.spacingS
+                          ),
+                          child: Text(
+                            // Use plural_label if available, otherwise capitalize type
+                            dataProvider.objectMetadata?.pluralLabel ??
+                                (widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)),
+                            style: AppTextStyles.bodyLarge,
+                          ),
+                        ),
 
                         // Data rows
                         Expanded(
@@ -606,7 +621,7 @@ class _ListScreenState extends State<ListScreen> {
                             },
                             child: ListView.builder(
                               itemCount: items.length,
-                              padding: EdgeInsets.only(bottom: 16),
+                              padding: EdgeInsets.only(bottom: AppDimensions.spacingL),
                               itemBuilder: (ctx, index) {
                                 final item = items[index];
                                 return _buildDynamicItem(item, limitedVisibleColumns, _columnLabels);
@@ -627,59 +642,64 @@ class _ListScreenState extends State<ListScreen> {
   }
 
   Widget _buildDynamicItem(dynamic item, List<String> visibleColumns, Map<String, String> columnLabels) {
-    // Styles as per requirements
-    TextStyle labelStyle = TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w500,
-        color: Color(0xFF070707)
-    );
-
-    TextStyle dataStyle = TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w400,
-        color: Color(0xFF191919)
-    );
-
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingL),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Divider(height: 1),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: Colors.grey.shade300, // Darker color for divider
+          ),
           Padding(
-            padding: EdgeInsets.only(top: 12, bottom: 0), // Space above item, no space below
+            padding: EdgeInsets.only(top: AppDimensions.spacingM),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center, // Changed from start to center for vertical alignment
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: visibleColumns.map((column) {
                       return Padding(
-                        padding: EdgeInsets.symmetric(vertical: 2),
+                        padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingXxs),
                         child: Row(
                           children: [
                             // Left padding for labels
-                            SizedBox(width: 8),
+                            SizedBox(width: AppDimensions.spacingS),
                             // Fixed width container for labels
                             Container(
                               width: 110, // Fixed width for all labels
                               child: Text(
                                 columnLabels[column] ?? column, // Using the label from columnLabels
-                                style: labelStyle,
+                               style: TextStyle(
+                                  // Swapped styles - labels now darker and bolder
+                                  fontSize: AppDimensions.textM,
+                                  color: AppColors.textPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                                 overflow: TextOverflow.ellipsis,  // Handles long labels
                               ),
                             ),
-                            SizedBox(width: 8), // Added space before colon
+                            SizedBox(width: AppDimensions.spacingS), // Added space before colon
                             Text(
                               ':',
-                              style: labelStyle,
+                              style: TextStyle(
+                                fontSize: AppDimensions.textM,
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                            SizedBox(width: 8), // Space after colon
+                            SizedBox(width: AppDimensions.spacingS), // Space after colon
                             Expanded(
                               child: Text(
                                 item.getStringAttribute(column, defaultValue: '---'),
-                                style: dataStyle, // Using data-specific style
+                                style: TextStyle(
+                                  // Swapped styles - values now lighter
+                                  fontSize: AppDimensions.textM,
+                                  color: AppColors.textSecondary,
+                                  fontWeight: FontWeight.normal,
+                                ),
                                 overflow: TextOverflow.ellipsis, // Handles long data
                               ),
                             ),
@@ -693,13 +713,13 @@ class _ListScreenState extends State<ListScreen> {
                 PopupMenuButton<String>(
                   icon: Icon(
                     Icons.more_vert,
-                    size: 25,
+                    size: AppDimensions.iconL,
                     color: Colors.grey.shade600,
                   ),
-                  color: Colors.white,
-                  elevation: 3,
+                  color: AppColors.cardBackground,
+                  elevation: AppDimensions.elevationM,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusS),
                   ),
                   onSelected: (String value) async{
                     if (value == 'details') {
@@ -735,7 +755,7 @@ class _ListScreenState extends State<ListScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('Item updated successfully!'),
-                            backgroundColor: Colors.green,
+                            backgroundColor: AppColors.success,
                             duration: Duration(seconds: 2),
                             behavior: SnackBarBehavior.floating,
                             margin: EdgeInsets.only(
@@ -753,9 +773,9 @@ class _ListScreenState extends State<ListScreen> {
                       value: 'details',
                       child: Row(
                         children: [
-                          Icon(Icons.visibility, color: Colors.lightBlue),
-                          SizedBox(width: 8),
-                          Text('Details', style: TextStyle(color: Colors.lightBlue)),
+                          Icon(Icons.visibility, color: AppColors.primary),
+                          SizedBox(width: AppDimensions.spacingS),
+                          Text('Details', style: AppTextStyles.actionText),
                         ],
                       ),
                     ),
@@ -763,9 +783,9 @@ class _ListScreenState extends State<ListScreen> {
                       value: 'edit',
                       child: Row(
                         children: [
-                          Icon(Icons.edit, color: Colors.lightBlue),
-                          SizedBox(width: 8),
-                          Text('Edit', style: TextStyle(color: Colors.lightBlue)),
+                          Icon(Icons.edit, color: AppColors.primary),
+                          SizedBox(width: AppDimensions.spacingS),
+                          Text('Edit', style: AppTextStyles.actionText),
                         ],
                       ),
                     ),

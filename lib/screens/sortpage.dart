@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/data_provider.dart';
+import 'package:materio/theme/app_button_styles.dart';
 
 class SortPage extends StatefulWidget {
   final String type;
@@ -153,19 +154,12 @@ class _SortPageState extends State<SortPage> {
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.only(right: 8.0),
-                          child: ElevatedButton(
+                          child: OutlinedButton(
                             onPressed: () {
                               // Navigate back without applying changes
                               Navigator.of(context).pop(false);
                             },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: Colors.black,
-                              padding: EdgeInsets.symmetric(vertical: 16),
-                              shape: StadiumBorder(), // Oval/pill shape
-                              elevation: 2,
-                              side: BorderSide(color: Colors.grey.shade300),
-                            ),
+                            style: AppButtonStyles.secondaryButton,
                             child: Text(
                               'Cancel',
                               style: TextStyle(
@@ -196,13 +190,7 @@ class _SortPageState extends State<SortPage> {
                               // Navigate back indicating changes were made
                               Navigator.of(context).pop(true);
                             },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Color.fromARGB(255, 88, 151, 245),
-                              foregroundColor: Colors.white,
-                              padding: EdgeInsets.symmetric(vertical: 16),
-                              shape: StadiumBorder(), // Oval/pill shape
-                              elevation: 2,
-                            ),
+                            style: AppButtonStyles.primaryButton,
                             child: Text(
                               'Apply Sort',
                               style: TextStyle(

@@ -3,6 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/auth_provider.dart';
 import '../providers/data_provider.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_dimensions.dart';
+import '../theme/app_text_styles.dart';
+import '../theme/app_button_styles.dart';
 import 'filter_logic.dart' as filter_logic;
 
 /// A full screen filter page with improved UI using dialog for adding filters
@@ -112,7 +116,7 @@ class _FilterPageState extends State<FilterPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error applying filters: ${e.toString()}'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.error,
         )
       );
       
@@ -153,7 +157,7 @@ class _FilterPageState extends State<FilterPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error clearing filters: ${e.toString()}'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.error,
         )
       );
       
@@ -248,9 +252,6 @@ class _FilterPageState extends State<FilterPage> {
       return;
     }
     
-    // Get the card background color for the dialog
-    final Color cardBackgroundColor = Colors.white;
-    
     // Show the dialog
     showDialog(
       context: context,
@@ -262,52 +263,40 @@ class _FilterPageState extends State<FilterPage> {
             final fieldLabel = columnLabels[_tempFilterCondition!.field] ?? _tempFilterCondition!.field;
             
             return AlertDialog(
-              backgroundColor: cardBackgroundColor,
-              title: Text('Add Filter', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              backgroundColor: AppColors.cardBackground,
+              title: Text('Add Filter', style: AppTextStyles.subheading),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Field section
-                    Text('Field', style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 13,
-                      color: Colors.grey[700],
-                    )),
-                    SizedBox(height: 4),
-                    _buildDialogFieldDropdown(allColumns, columnLabels, cardBackgroundColor, setDialogState),
-                    SizedBox(height: 16),
+                    Text('Field', style: AppTextStyles.fieldLabel),
+                    SizedBox(height: AppDimensions.spacingXs),
+                    _buildDialogFieldDropdown(allColumns, columnLabels, setDialogState),
+                    SizedBox(height: AppDimensions.spacingL),
                     
                     // Operator section
-                    Text('Operator', style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 13,
-                      color: Colors.grey[700],
-                    )),
-                    SizedBox(height: 4),
-                    _buildDialogOperatorDropdown(isDate, allColumns, cardBackgroundColor, setDialogState),
-                    SizedBox(height: 16),
+                    Text('Operator', style: AppTextStyles.fieldLabel),
+                    SizedBox(height: AppDimensions.spacingXs),
+                    _buildDialogOperatorDropdown(isDate, allColumns, setDialogState),
+                    SizedBox(height: AppDimensions.spacingL),
                     
                     // Value section
-                    Text('Value', style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 13,
-                      color: Colors.grey[700],
-                    )),
-                    SizedBox(height: 4),
-                    _buildDialogValueField(isDate, cardBackgroundColor, setDialogState),
+                    Text('Value', style: AppTextStyles.fieldLabel),
+                    SizedBox(height: AppDimensions.spacingXs),
+                    _buildDialogValueField(isDate, setDialogState),
                     
                     // Preview section
                     if (_tempFilterCondition!.value.isNotEmpty) ...[
-                      SizedBox(height: 24),
+                      SizedBox(height: AppDimensions.spacingXl),
                       Container(
                         width: double.infinity,
-                        padding: EdgeInsets.all(12),
+                        padding: EdgeInsets.all(AppDimensions.spacingM),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                          color: AppColors.primaryLighter.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(AppDimensions.radiusS),
+                          border: Border.all(color: AppColors.primary.withOpacity(0.3)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -316,17 +305,17 @@ class _FilterPageState extends State<FilterPage> {
                               'Filter Preview:',
                               style: TextStyle(
                                 fontWeight: FontWeight.w500,
-                                fontSize: 13,
-                                color: Colors.blue[800],
+                                fontSize: AppDimensions.textS,
+                                color: AppColors.primaryDark,
                               ),
                             ),
-                            SizedBox(height: 8),
+                            SizedBox(height: AppDimensions.spacingS),
                             Row(
                               children: [
                                 _buildKeyValueText('Field', fieldLabel),
-                                SizedBox(width: 8),
+                                SizedBox(width: AppDimensions.spacingS),
                                 _buildKeyValueText('Operator', _tempFilterCondition!.operator.displayName),
-                                SizedBox(width: 8),
+                                SizedBox(width: AppDimensions.spacingS),
                                 _buildKeyValueText('Value', _tempFilterCondition!.value),
                               ],
                             ),
@@ -338,23 +327,15 @@ class _FilterPageState extends State<FilterPage> {
                 ),
               ),
               actions: [
-                // Cancel button - white with black text
+                // Cancel button
                 TextButton(
                   onPressed: () {
                     Navigator.of(context).pop();
                   },
-                  style: TextButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black,
-                    padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      side: BorderSide(color: Colors.grey.shade300),
-                    ),
-                  ),
+                  style: AppButtonStyles.dialogCancelButton,
                   child: Text('Cancel'),
                 ),
-                // Save button - blue with white text
+                // Save button
                 ElevatedButton(
                   onPressed: _tempFilterCondition!.value.trim().isNotEmpty ? () {
                     // Add the filter if value is not empty
@@ -364,14 +345,7 @@ class _FilterPageState extends State<FilterPage> {
                     });
                     Navigator.of(context).pop();
                   } : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
+                  style: AppButtonStyles.dialogConfirmButton,
                   child: Text('Save'),
                 ),
               ],
@@ -390,18 +364,15 @@ class _FilterPageState extends State<FilterPage> {
         children: [
           Text(
             key,
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.grey[600],
-            ),
+            style: AppTextStyles.labelText,
           ),
-          SizedBox(height: 2),
+          SizedBox(height: AppDimensions.spacingXxs),
           Text(
             value,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: AppDimensions.textS,
               fontWeight: FontWeight.w500,
-              color: Colors.blue[800],
+              color: AppColors.primaryDark,
             ),
             overflow: TextOverflow.ellipsis,
           ),
@@ -421,7 +392,6 @@ class _FilterPageState extends State<FilterPage> {
   Widget _buildDialogFieldDropdown(
     List<filter_logic.ColumnInfo> allColumns,
     Map<String, String> columnLabels,
-    Color backgroundColor,
     StateSetter setDialogState
   ) {
     // Get a list of field names from allColumns
@@ -432,21 +402,21 @@ class _FilterPageState extends State<FilterPage> {
     
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
-        color: backgroundColor,
+        border: Border.all(color: AppColors.divider),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusS),
+        color: AppColors.cardBackground,
       ),
-      padding: EdgeInsets.symmetric(horizontal: 8),
+      padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingS),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: _tempFilterCondition!.field,
           isExpanded: true,
-          icon: Icon(Icons.keyboard_arrow_down, color: Colors.black, size: 20),
+          icon: Icon(Icons.keyboard_arrow_down, color: AppColors.textPrimary, size: AppDimensions.iconM),
           menuMaxHeight: 200,
           items: allFieldNames.map((field) {
             return DropdownMenuItem<String>(
               value: field,
-              child: Text(columnLabels[field] ?? field, style: TextStyle(fontSize: 13)),
+              child: Text(columnLabels[field] ?? field, style: AppTextStyles.bodyMedium),
             );
           }).toList(),
           onChanged: (value) {
@@ -463,7 +433,7 @@ class _FilterPageState extends State<FilterPage> {
               });
             }
           },
-          dropdownColor: backgroundColor,
+          dropdownColor: AppColors.cardBackground,
         ),
       ),
     );
@@ -472,7 +442,6 @@ class _FilterPageState extends State<FilterPage> {
   Widget _buildDialogOperatorDropdown(
     bool isDateField,
     List<filter_logic.ColumnInfo> allColumns,
-    Color backgroundColor,
     StateSetter setDialogState
   ) {
     // Get appropriate operators based on field type
@@ -480,21 +449,21 @@ class _FilterPageState extends State<FilterPage> {
     
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
-        color: backgroundColor,
+        border: Border.all(color: AppColors.divider),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusS),
+        color: AppColors.cardBackground,
       ),
-      padding: EdgeInsets.symmetric(horizontal: 8),
+      padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingS),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<FilterOperator>(
           value: _tempFilterCondition!.operator,
           isExpanded: true,
-          icon: Icon(Icons.keyboard_arrow_down, color: Colors.black, size: 20),
+          icon: Icon(Icons.keyboard_arrow_down, color: AppColors.textPrimary, size: AppDimensions.iconM),
           menuMaxHeight: 200,
           items: operators.map((FilterOperator operator) {
             return DropdownMenuItem<FilterOperator>(
               value: operator,
-              child: Text(operator.displayName, style: TextStyle(fontSize: 13)),
+              child: Text(operator.displayName, style: AppTextStyles.bodyMedium),
             );
           }).toList(),
           onChanged: (FilterOperator? value) {
@@ -508,7 +477,7 @@ class _FilterPageState extends State<FilterPage> {
               });
             }
           },
-          dropdownColor: backgroundColor,
+          dropdownColor: AppColors.cardBackground,
         ),
       ),
     );
@@ -516,7 +485,6 @@ class _FilterPageState extends State<FilterPage> {
   
   Widget _buildDialogValueField(
     bool isDate, 
-    Color backgroundColor,
     StateSetter setDialogState
   ) {
     if (isDate) {
@@ -531,9 +499,9 @@ class _FilterPageState extends State<FilterPage> {
               return Theme(
                 data: Theme.of(context).copyWith(
                   colorScheme: ColorScheme.light(
-                    primary: Colors.blue,
-                    onPrimary: Colors.white,
-                    onSurface: Colors.black,
+                    primary: AppColors.primary,
+                    onPrimary: AppColors.textWhite,
+                    onSurface: AppColors.textPrimary,
                   ),
                 ),
                 child: child!,
@@ -557,11 +525,11 @@ class _FilterPageState extends State<FilterPage> {
         },
         child: Container(
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(8),
-            color: backgroundColor,
+            border: Border.all(color: AppColors.divider),
+            borderRadius: BorderRadius.circular(AppDimensions.radiusS),
+            color: AppColors.cardBackground,
           ),
-          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingM, vertical: AppDimensions.spacingM),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -571,12 +539,12 @@ class _FilterPageState extends State<FilterPage> {
                     : 'Select date...',
                 style: TextStyle(
                   color: _tempFilterCondition!.value.isNotEmpty 
-                      ? Colors.black 
-                      : Colors.grey,
-                  fontSize: 13,
+                      ? AppColors.textPrimary
+                      : AppColors.textHint,
+                  fontSize: AppDimensions.textM,
                 ),
               ),
-              Icon(Icons.calendar_today, size: 18, color: Colors.blue),
+              Icon(Icons.calendar_today, size: AppDimensions.iconS, color: AppColors.primary),
             ],
           ),
         ),
@@ -584,19 +552,19 @@ class _FilterPageState extends State<FilterPage> {
     } else {
       return TextField(
         controller: _dialogValueController,
-        style: TextStyle(fontSize: 13),
+        style: AppTextStyles.bodyMedium,
         decoration: InputDecoration(
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(AppDimensions.radiusS),
+            borderSide: BorderSide(color: AppColors.divider),
           ),
-          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          contentPadding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingM, vertical: AppDimensions.spacingM),
           hintText: 'Enter value...',
           filled: true,
-          fillColor: backgroundColor,
+          fillColor: AppColors.cardBackground,
           suffixIcon: _dialogValueController.text.isNotEmpty
               ? IconButton(
-                  icon: Icon(Icons.clear, size: 16),
+                  icon: Icon(Icons.clear, size: AppDimensions.iconS),
                   onPressed: () {
                     setDialogState(() {
                       _dialogValueController.clear();
@@ -623,8 +591,8 @@ class _FilterPageState extends State<FilterPage> {
     }
   }
   
-  // Helper method to display detailed filter chip
-  Widget _buildFilterChip(
+  // UPDATED: New filter item widget that takes full width with divider
+  Widget _buildFilterItem(
     int index, 
     filter_logic.FilterCondition filter, 
     Map<String, String> columnLabels
@@ -632,107 +600,87 @@ class _FilterPageState extends State<FilterPage> {
     // Get readable label for the field
     String fieldLabel = columnLabels[filter.field] ?? filter.field;
     
-    return Container(
-      margin: EdgeInsets.only(right: 8, bottom: 8),
-      decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blue.withOpacity(0.3)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Field label with title
-                Row(
+    return Column(
+      children: [
+        // Add divider above all items except the first one
+        if (index > 0)
+          Divider(height: 1, thickness: 1, color: AppColors.divider),
+          
+        Container(
+          width: double.infinity,
+          color: AppColors.cardBackground,
+          padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingM, horizontal: AppDimensions.spacingL),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Filter details - takes most of the space
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Field: ',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey[700],
-                        fontWeight: FontWeight.normal,
-                      ),
+                    // Field
+                    Row(
+                      children: [
+                        Text(
+                          'Field: ',
+                          style: AppTextStyles.fieldLabel,
+                        ),
+                        Text(
+                          fieldLabel,
+                          style: AppTextStyles.fieldValue,
+                        ),
+                      ],
                     ),
-                    Text(
-                      fieldLabel,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blue[800],
-                        fontWeight: FontWeight.w500,
-                      ),
+                    SizedBox(height: AppDimensions.spacingXs),
+                    
+                    // Operator
+                    Row(
+                      children: [
+                        Text(
+                          'Operator: ',
+                          style: AppTextStyles.fieldLabel,
+                        ),
+                        Text(
+                          filter.operator.displayName,
+                          style: AppTextStyles.fieldValue,
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: AppDimensions.spacingXs),
+                    
+                    // Value
+                    Row(
+                      children: [
+                        Text(
+                          'Value: ',
+                          style: AppTextStyles.fieldLabel,
+                        ),
+                        Text(
+                          filter.value,
+                          style: AppTextStyles.fieldValue,
+                        ),
+                      ],
                     ),
                   ],
-                ),
-                SizedBox(height: 4),
-                // Operator with title
-                Row(
-                  children: [
-                    Text(
-                      'Operator: ',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey[700],
-                        fontWeight: FontWeight.normal,
-                      ),
-                    ),
-                    Text(
-                      filter.operator.displayName,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blue[800],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 4),
-                // Value with title
-                Row(
-                  children: [
-                    Text(
-                      'Value: ',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey[700],
-                        fontWeight: FontWeight.normal,
-                      ),
-                    ),
-                    Text(
-                      filter.value,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blue[800],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            SizedBox(width: 8),
-            InkWell(
-              onTap: () => _removeFilter(index),
-              child: Container(
-                padding: EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.close,
-                  size: 16,
-                  color: Colors.red[800],
                 ),
               ),
-            ),
-          ],
+              
+              // Delete button
+              InkWell(
+                onTap: () => _removeFilter(index),
+                child: Container(
+                  padding: EdgeInsets.all(AppDimensions.spacingS),
+                  child: Icon(
+                    Icons.delete_outline,
+                    size: AppDimensions.iconL,
+                    color: AppColors.error,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
     
@@ -757,7 +705,6 @@ class _FilterPageState extends State<FilterPage> {
   @override
   Widget build(BuildContext context) {
     final dataProvider = Provider.of<DataProvider>(context);
-    final cardBackgroundColor = Colors.white;
     
     // Create column info objects with the data we have
     List<filter_logic.ColumnInfo> allColumns = dataProvider.allColumns.map((col) => 
@@ -777,19 +724,13 @@ class _FilterPageState extends State<FilterPage> {
     
     return Scaffold(
       appBar: AppBar(
-        title: Text('Filter', style: TextStyle(
-          color: Colors.white,
-          fontSize: 18,
-        )),
-        backgroundColor: Colors.blue,
-        elevation: 2,
-        iconTheme: IconThemeData(color: Colors.white),
+        title: Text('Filter'),
         actions: [
           TextButton.icon(
-            icon: Icon(Icons.cleaning_services_outlined, color: Colors.white, size: 16),
+            icon: Icon(Icons.cleaning_services_outlined, color: AppColors.textWhite, size: AppDimensions.iconS),
             label: Text(
               'Clear All',
-              style: TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(color: AppColors.textWhite, fontSize: AppDimensions.textM),
             ),
             onPressed: _clearAllFilters
           ),
@@ -798,29 +739,29 @@ class _FilterPageState extends State<FilterPage> {
       body: _isLoading 
         ? Center(child: CircularProgressIndicator())
         : Container(
-            color: Colors.blue[50],
-            padding: const EdgeInsets.all(16.0),
+            color: AppColors.background,
+            padding: EdgeInsets.all(AppDimensions.spacingL),
             child: Column(
               children: [
                 // Filter count info - only show if filters exist
                 if (_activeFilters.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 16.0),
+                    padding: EdgeInsets.only(bottom: AppDimensions.spacingL),
                     child: Container(
-                      padding: EdgeInsets.all(12),
+                      padding: EdgeInsets.all(AppDimensions.spacingM),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                        color: AppColors.primaryLight.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(AppDimensions.radiusS),
+                        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.filter_list, color: Colors.blue, size: 20),
-                          SizedBox(width: 8),
+                          Icon(Icons.filter_list, color: AppColors.primary, size: AppDimensions.iconM),
+                          SizedBox(width: AppDimensions.spacingS),
                           Expanded(
                             child: Text(
                               'Active filters: ${_activeFilters.length}',
-                              style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.w500),
+                              style: TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.w500),
                             ),
                           ),
                         ],
@@ -831,40 +772,40 @@ class _FilterPageState extends State<FilterPage> {
                 // Card for filter display and actions
                 Expanded(
                   child: Card(
-                    elevation: 1,
                     margin: EdgeInsets.zero,
-                    color: cardBackgroundColor,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(AppDimensions.radiusS),
+                      side: BorderSide(color: AppColors.divider),
                     ),
                     child: Column(
                       children: [
-                        // Applied filters section - scrollable wrap
+                        // Applied filters section - scrollable list with full-width items
                         if (_activeFilters.isNotEmpty)
                           Expanded(
-                            child: SingleChildScrollView(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: EdgeInsets.all(AppDimensions.spacingL),
+                                  child: Text(
                                     'Applied Filters',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
+                                    style: AppTextStyles.cardTitle,
                                   ),
-                                  SizedBox(height: 12),
-                                  Wrap(
-                                    spacing: 8, // Horizontal space between chips
-                                    runSpacing: 12, // Vertical space between lines
-                                    children: _activeFilters.asMap().entries.map((entry) {
-                                      return _buildFilterChip(entry.key, entry.value, columnLabels);
-                                    }).toList(),
+                                ),
+                                Expanded(
+                                  child: ListView.builder(
+                                    padding: EdgeInsets.zero,
+                                    itemCount: _activeFilters.length,
+                                    itemBuilder: (context, index) {
+                                      return _buildFilterItem(
+                                        index, 
+                                        _activeFilters[index], 
+                                        columnLabels
+                                      );
+                                    },
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           )
                         else
@@ -876,22 +817,22 @@ class _FilterPageState extends State<FilterPage> {
                                   Icon(
                                     Icons.filter_alt_off,
                                     size: 64,
-                                    color: Colors.grey[400],
+                                    color: AppColors.textHint,
                                   ),
-                                  SizedBox(height: 16),
+                                  SizedBox(height: AppDimensions.spacingL),
                                   Text(
                                     'No filters applied',
                                     style: TextStyle(
-                                      color: Colors.grey[700],
-                                      fontSize: 16,
+                                      color: AppColors.textSecondary,
+                                      fontSize: AppDimensions.textL,
                                     ),
                                   ),
-                                  SizedBox(height: 8),
+                                  SizedBox(height: AppDimensions.spacingS),
                                   Text(
                                     'Add filters to narrow down your results',
                                     style: TextStyle(
-                                      color: Colors.grey[500],
-                                      fontSize: 14,
+                                      color: AppColors.textSecondary,
+                                      fontSize: AppDimensions.textM,
                                     ),
                                   ),
                                 ],
@@ -902,50 +843,44 @@ class _FilterPageState extends State<FilterPage> {
                         // Action buttons section - fixed at bottom
                         Container(
                           decoration: BoxDecoration(
-                            color: cardBackgroundColor,
+                            color: AppColors.cardBackground,
                             border: Border(
-                              top: BorderSide(color: Colors.grey.shade200, width: 1),
+                              top: BorderSide(color: AppColors.divider, width: 1),
                             ),
                           ),
-                          padding: EdgeInsets.all(16),
+                          padding: EdgeInsets.all(AppDimensions.spacingL),
                           child: Row(
                             children: [
                               // Add Filter button
                               Expanded(
                                 flex: 1,
                                 child: TextButton.icon(
-                                  icon: Icon(Icons.add_circle_outline, color: Colors.blue),
-                                  label: Text('Add Filter', style: TextStyle(color: Colors.blue)),
+                                  icon: Icon(Icons.add_circle_outline, color: AppColors.primary),
+                                  label: Text('Add Filter', style: AppTextStyles.actionText),
                                   onPressed: _showAddFilterDialog,
-                                  style: TextButton.styleFrom(
-                                    padding: EdgeInsets.symmetric(vertical: 16),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingL),
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(30),
-                                      side: BorderSide(color: Colors.blue.withOpacity(0.3)),
+                                      borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
+                                      side: BorderSide(color: AppColors.primary.withOpacity(0.3)),
                                     ),
-                                    backgroundColor: cardBackgroundColor,
+                                    backgroundColor: AppColors.cardBackground,
                                   ),
                                 ),
                               ),
-                              SizedBox(width: 16),
+                              SizedBox(width: AppDimensions.spacingL),
                               // Apply Filters button
                               Expanded(
                                 flex: 1,
                                 child: ElevatedButton(
                                   onPressed: _activeFilters.isNotEmpty ? _applyFilters : null,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.blue,
-                                    padding: EdgeInsets.symmetric(vertical: 16),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(30),
-                                    ),
-                                  ),
+                                  style: AppButtonStyles.primaryButton,
                                   child: Text(
                                     'Apply Filters',
                                     style: TextStyle(
-                                      fontSize: 16,
+                                      fontSize: AppDimensions.textM,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.white,
+                                      color: AppColors.textWhite,
                                     ),
                                   ),
                                 ),
