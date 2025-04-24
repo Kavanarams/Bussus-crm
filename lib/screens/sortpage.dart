@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/data_provider.dart';
-import 'package:materio/theme/app_button_styles.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_dimensions.dart';
+import '../theme/app_text_styles.dart';
 
 class SortPage extends StatefulWidget {
   final String type;
@@ -51,14 +53,13 @@ class _SortPageState extends State<SortPage> {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     
     return Scaffold(
-      backgroundColor: Color(0xFFE0F7FA), // Light blue background
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
           'Sort ${widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)}',
-          style: TextStyle(color: Colors.white, fontSize: 16),
         ),
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Colors.white),
+          icon: Icon(Icons.arrow_back),
           onPressed: () {
             Navigator.of(context).pop(false); // Return false if canceled
           },
@@ -72,36 +73,37 @@ class _SortPageState extends State<SortPage> {
               // Navigate back with true to indicate changes were made
               Navigator.of(context).pop(true);
             },
-            child: Text('Clear Sort', style: TextStyle(color: Colors.white)),
+            // Make sure the text is visible on app bar background
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+            ),
+            child: Text(
+              'Clear Sort',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ],
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: EdgeInsets.all(AppDimensions.spacingL),
           child: Card(
-            color: Colors.white, // Pure white card
-            elevation: 4,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Header
                 Padding(
-                  padding: const EdgeInsets.all(16.0),
+                  padding: EdgeInsets.all(AppDimensions.spacingL),
                   child: Text(
                     'Select column to sort by',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w500,
-                      color: const Color.fromARGB(211, 0, 0, 0),
-                    ),
+                    style: AppTextStyles.subheading,
                   ),
                 ),
                 
-                Divider(height: 1),
+                Divider(height: 1, color: AppColors.divider),
                 
                 // Column selection list
                 Expanded(
@@ -115,15 +117,15 @@ class _SortPageState extends State<SortPage> {
                       return ListTile(
                         title: Text(
                           label,
-                          style: TextStyle(
-                            color: isActive ? Color.fromARGB(234, 9, 0, 0) : Colors.black87,
-                            fontWeight: isActive ? FontWeight.w500 : FontWeight.normal,
-                          ),
+                          style: isActive 
+                              ? AppTextStyles.fieldValue
+                              : AppTextStyles.bodyMedium,
                         ),
                         trailing: isActive
                             ? Icon(
                                 _tempSortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                                color: Color.fromARGB(219, 0, 4, 10),
+                                color: AppColors.primary,
+                                size: AppDimensions.iconM,
                               )
                             : null,
                         onTap: () {
@@ -146,35 +148,28 @@ class _SortPageState extends State<SortPage> {
                 // Two buttons at bottom: Cancel and Apply Sort
                 Container(
                   width: double.infinity,
-                  padding: EdgeInsets.all(16),
+                  padding: EdgeInsets.all(AppDimensions.spacingL),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      // Cancel Button - White with black text
+                      // Cancel Button
                       Expanded(
                         child: Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
+                          padding: EdgeInsets.only(right: AppDimensions.spacingS),
                           child: OutlinedButton(
                             onPressed: () {
                               // Navigate back without applying changes
                               Navigator.of(context).pop(false);
                             },
-                            style: AppButtonStyles.secondaryButton,
-                            child: Text(
-                              'Cancel',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
+                            child: Text('Cancel'),
                           ),
                         ),
                       ),
                       
-                      // Apply Sort Button - Blue with white text
+                      // Apply Sort Button
                       Expanded(
                         child: Padding(
-                          padding: const EdgeInsets.only(left: 8.0),
+                          padding: EdgeInsets.only(left: AppDimensions.spacingS),
                           child: ElevatedButton(
                             onPressed: () {
                               if (_tempSortColumn != null) {
@@ -190,14 +185,7 @@ class _SortPageState extends State<SortPage> {
                               // Navigate back indicating changes were made
                               Navigator.of(context).pop(true);
                             },
-                            style: AppButtonStyles.primaryButton,
-                            child: Text(
-                              'Apply Sort',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
+                            child: Text('Apply Sort'),
                           ),
                         ),
                       ),
