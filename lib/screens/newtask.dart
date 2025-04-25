@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
+import '../providers/data_provider.dart'; // Import your data provider
+import '../theme/app_dimensions.dart';
+import '../theme/app_text_styles.dart';
 
 class TaskFormScreen extends StatefulWidget {
   final String relatedObjectId;
@@ -28,7 +29,6 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   String selectedStatus = 'Not Started';
   DateTime? selectedDate;
   bool _isSaving = false;
-  final GlobalKey<ScaffoldMessengerState> _scaffoldKey = GlobalKey<ScaffoldMessengerState>();
   
   // Error state variables
   Map<String, bool> fieldErrors = {
@@ -60,35 +60,13 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
     );
   }
 
-  // Function to show date picker with custom theme matching card color
+  // Function to show date picker with theme styling
   Future<void> _selectDate(BuildContext context) async {
-    final colorScheme = ColorScheme.light(
-      primary: Colors.blue[700]!,
-      onPrimary: Colors.white,
-      onSurface: Colors.black,
-      surface: Colors.white, // Match card color
-    );
-    
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: selectedDate ?? DateTime.now(),
       firstDate: DateTime.now(),
       lastDate: DateTime(2025, 12, 31),
-      // Custom theme for the date picker
-      builder: (BuildContext context, Widget? child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: colorScheme,
-            dialogBackgroundColor: Colors.white, // Card color
-            textButtonTheme: TextButtonThemeData(
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.blue[700],
-              ),
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
     
     if (picked != null && picked != selectedDate) {
@@ -100,311 +78,263 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
     }
   }
 
-  // Creates a form field with properly aligned floating label
-  // Replace your current buildFormField method with this improved version
-Widget buildFormField({
-  required String label,
-  required bool isRequired,
-  required Widget child,
-  bool isError = false,
-}) {
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Container(
-        margin: EdgeInsets.only(bottom: 16),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // The input field or dropdown
-            child,
-            // Label positioned on the border with improved visibility
-            Positioned(
-              left: 10,
-              top: -9,
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(
+  // Fixed form field builder
+  Widget buildFormField({
+    required String label,
+    required bool isRequired,
+    required Widget child,
+    bool isError = false,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: AppDimensions.spacingL),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // The input field or dropdown with appropriate constraints
+              Container(
+                width: double.infinity,
+                child: child,
+              ),
+              // Label positioned on the border
+              Positioned(
+                left: 10,
+                top: -9,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingXs),
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(4),
-                  // Add shadow for better visibility
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.white,
-                      spreadRadius: 3,
-                      blurRadius: 0,
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isError ? Colors.red : Colors.black87,
-                        // Make label bolder for better visibility
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (isRequired)
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       Text(
-                        ' *',
+                        label,
                         style: TextStyle(
-                          color: Colors.red,
-                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: isError ? Theme.of(context).colorScheme.error : Colors.black87,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                  ],
+                      if (isRequired)
+                        Text(
+                          ' *',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ),
-    ],
-  );
-}
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: Size.fromHeight(56),
-        child: AppBar(
-          title: Text(
-            "New Task",
-            style: const TextStyle(color: Colors.white, fontSize: 18)
-          ),
-          backgroundColor: Colors.blue[700],
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () => Navigator.pop(context),
-          ),
+      appBar: AppBar(
+        title: Text("New Task"),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
-      backgroundColor: Colors.blue.shade50,
-      body: Padding(
-        padding: EdgeInsets.all(16),
-        child: Card(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          elevation: 2,
-          color: Colors.white,
-          child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Task Information',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.all(AppDimensions.spacingL),
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(AppDimensions.spacingL),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Task Information',
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
-                ),
-                SizedBox(height: 20),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        // Subject field with properly aligned label
-                        buildFormField(
-                          label: 'Subject',
-                          isRequired: true,
-                          isError: fieldErrors['subject'] ?? false,
-                          child: TextField(
-                            controller: subjectController,
-                            decoration: InputDecoration(
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              // Key fix: Use transparent border when focused
-                              // to prevent it from overlapping with the label
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.blue[700]!, width: 1.5),
-                              ),
-                              labelText: '',
-                              floatingLabelBehavior: FloatingLabelBehavior.never,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              errorText: (fieldErrors['subject'] ?? false) ? 'This field is required' : null,
-                              errorStyle: TextStyle(
-                                color: Colors.transparent, // Hide the error text as we're handling it differently
-                                fontSize: 0,
+                  SizedBox(height: AppDimensions.spacingL),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          // Subject field
+                          buildFormField(
+                            label: 'Subject',
+                            isRequired: true,
+                            isError: fieldErrors['subject'] ?? false,
+                            child: TextField(
+                              controller: subjectController,
+                              decoration: InputDecoration(
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 16, 
+                                  vertical: 14
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                errorStyle: TextStyle(height: 0),
                               ),
                             ),
                           ),
-                        ),
-                        // Due Date field with properly aligned label
-                        buildFormField(
-                          label: 'Due Date',
-                          isRequired: true,
-                          isError: fieldErrors['dueDate'] ?? false,
-                          child: TextField(
-                            controller: dueDateController,
-                            readOnly: true,
-                            onTap: () => _selectDate(context),
-                            decoration: InputDecoration(
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.blue[700]!, width: 1.5),
-                              ),
-                              suffixIcon: Icon(Icons.calendar_today),
-                              labelText: '',
-                              floatingLabelBehavior: FloatingLabelBehavior.never,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              errorText: (fieldErrors['dueDate'] ?? false) ? 'This field is required' : null,
-                              errorStyle: TextStyle(
-                                color: Colors.transparent, // Hide the error text as we're handling it differently
-                                fontSize: 0,
+                          
+                          // Due Date field
+                          buildFormField(
+                            label: 'Due Date',
+                            isRequired: true,
+                            isError: fieldErrors['dueDate'] ?? false,
+                            child: TextField(
+                              controller: dueDateController,
+                              readOnly: true,
+                              onTap: () => _selectDate(context),
+                              decoration: InputDecoration(
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 16, 
+                                  vertical: 14
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                suffixIcon: Icon(Icons.calendar_today),
+                                errorStyle: TextStyle(height: 0),
                               ),
                             ),
                           ),
-                        ),
-                        // Assigned To field with properly aligned label
-                        buildFormField(
-                          label: 'Assigned To',
-                          isRequired: true,
-                          isError: fieldErrors['assignedTo'] ?? false,
-                          child: TextField(
-                            controller: assignedToController,
-                            decoration: InputDecoration(
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.blue[700]!, width: 1.5),
-                              ),
-                              labelText: '',
-                              floatingLabelBehavior: FloatingLabelBehavior.never,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              errorText: (fieldErrors['assignedTo'] ?? false) ? 'This field is required' : null,
-                              errorStyle: TextStyle(
-                                color: Colors.transparent, // Hide the error text as we're handling it differently
-                                fontSize: 0,
+                          
+                          // Assigned To field
+                          buildFormField(
+                            label: 'Assigned To',
+                            isRequired: true,
+                            isError: fieldErrors['assignedTo'] ?? false,
+                            child: TextField(
+                              controller: assignedToController,
+                              decoration: InputDecoration(
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 16, 
+                                  vertical: 14
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                errorStyle: TextStyle(height: 0),
                               ),
                             ),
                           ),
-                        ),
-                        // Status dropdown with properly aligned label
-                        buildFormField(
-                          label: 'Status',
-                          isRequired: true,
-                          child: Container(
-                            height: 52,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey.shade400),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: selectedStatus,
-                                isExpanded: true,
-                                dropdownColor: Colors.white,
-                                icon: Icon(Icons.arrow_drop_down, color: Colors.black87),
-                                style: TextStyle(color: Colors.black87, fontSize: 16),
-                                padding: EdgeInsets.symmetric(horizontal: 16),
-                                items: [
-                                  'Not Started',
-                                  'In Progress',
-                                  'Completed',
-                                  'On Hold',
-                                  'Cancelled',
-                                  'Planned',
-                                  'Follow Up'
-                                ].map((String value) {
-                                  return DropdownMenuItem<String>(
-                                    value: value,
-                                    child: Text(value),
-                                  );
-                                }).toList(),
-                                onChanged: (String? newValue) {
-                                  if (newValue != null) {
-                                    setState(() {
-                                      selectedStatus = newValue;
-                                    });
-                                  }
-                                },
+                          
+                          // Status dropdown
+                          buildFormField(
+                            label: 'Status',
+                            isRequired: true,
+                            child: Container(
+                              height: 52,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade400),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 8.0),
+                                  child: DropdownButton<String>(
+                                    value: selectedStatus,
+                                    isExpanded: true,
+                                    icon: Icon(Icons.arrow_drop_down),
+                                    items: [
+                                      'Not Started',
+                                      'In Progress',
+                                      'Completed',
+                                      'On Hold',
+                                      'Cancelled',
+                                      'Planned',
+                                      'Follow Up'
+                                    ].map((String value) {
+                                      return DropdownMenuItem<String>(
+                                        value: value,
+                                        child: Text(value),
+                                      );
+                                    }).toList(),
+                                    onChanged: (String? newValue) {
+                                      if (newValue != null) {
+                                        setState(() {
+                                          selectedStatus = newValue;
+                                        });
+                                      }
+                                    },
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        // Related To field with properly aligned label
-                        buildFormField(
-                          label: 'Related To',
-                          isRequired: true,
-                          child: TextField(
-                            controller: relatedToController,
-                            readOnly: true,
-                            decoration: InputDecoration(
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
+                          
+                          // Related To field
+                          buildFormField(
+                            label: 'Related To',
+                            isRequired: true,
+                            child: TextField(
+                              controller: relatedToController,
+                              readOnly: true,
+                              decoration: InputDecoration(
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 16, 
+                                  vertical: 14
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
                               ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.blue[700]!, width: 1.5),
-                              ),
-                              labelText: '',
-                              floatingLabelBehavior: FloatingLabelBehavior.never,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Cancel button - white with black text
-                    ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black,
-                        minimumSize: Size(120, 45),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(22), // Makes it oval
+                  SizedBox(height: AppDimensions.spacingL),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Cancel button
+                      OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: Size(120, 45),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(22),
+                          ),
+                          side: BorderSide(color: Colors.grey.shade300),
                         ),
-                        side: BorderSide(color: Colors.grey.shade300),
+                        child: Text('Cancel'),
                       ),
-                      child: Text('Cancel'),
-                    ),
-                    SizedBox(width: 16),
-                    // Save button - blue with white text
-                    ElevatedButton(
-                      onPressed: _isSaving ? null : _saveTask,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue[700],
-                        foregroundColor: Colors.white,
-                        minimumSize: Size(120, 45),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(22), // Makes it oval
+                      SizedBox(width: AppDimensions.spacingL),
+                      // Save button
+                      ElevatedButton(
+                        onPressed: _isSaving ? null : _saveTask,
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: Size(120, 45),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(22),
+                          ),
                         ),
+                        child: _isSaving
+                            ? SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text('Save'),
                       ),
-                      child: _isSaving
-                          ? SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : Text('Save'),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -426,7 +356,7 @@ Widget buildFormField({
     if (fieldErrors.values.contains(true)) {
       showTopSnackBar(
         message: 'Please fill in all required fields',
-        backgroundColor: Colors.red,
+        backgroundColor: Theme.of(context).colorScheme.error,
       );
       return;
     }
@@ -436,6 +366,7 @@ Widget buildFormField({
     });
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final dataProvider = Provider.of<DataProvider>(context, listen: false);
     final token = authProvider.token;
 
     final taskData = {
@@ -449,21 +380,15 @@ Widget buildFormField({
     };
 
     try {
-      final response = await http.post(
-        Uri.parse('https://qa.api.bussus.com/v2/api/${widget.relatedObjectType}/task'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          'data': taskData
-        }),
+      // Using the data provider's createTask method
+      final result = await dataProvider.createTask(
+        taskData, 
+        token, 
+        widget.relatedObjectType
       );
 
-      print('📤 Create task response: ${response.body}');
-
-      if (response.statusCode == 201) {
-        // Set a success message that will persist after navigation
+      if (result['success']) {
+        // Success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Task added successfully'),
@@ -474,9 +399,8 @@ Widget buildFormField({
         );
         Navigator.pop(context, true);
       } else {
-        final responseData = json.decode(response.body);
         showTopSnackBar(
-          message: responseData['message'] ?? 'Failed to add task',
+          message: result['message'] ?? 'Failed to add task',
           backgroundColor: Colors.red,
         );
       }

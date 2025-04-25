@@ -3,6 +3,23 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/dynamic_model.dart';
 
+class FormSection {
+  final String title;
+  final List<String> fields;
+
+  FormSection({
+    required this.title,
+    required this.fields,
+  });
+
+  factory FormSection.fromJson(Map<String, dynamic> json) {
+    return FormSection(
+      title: json['title'] ?? '',
+      fields: List<String>.from(json['fields'] ?? []),
+    );
+  }
+}
+
 enum FilterOperator {
   equals('equals'),
   notEquals('not_equals'),
@@ -995,6 +1012,375 @@ bool _isDateValue(String value) {
       return false;
     }
   }
+
+  // Add this method to your DataProvider class
+Future<Map<String, dynamic>> getFormPreview(String type, String token) async {
+  String endpoint = 'https://qa.api.bussus.com/v2/api/$type/preview';
+  _isLoading = true;
+  _safeNotifyListeners();
+
+  try {
+    print('🌐 Fetching form preview for $type');
+
+    // Check if token exists
+    if (token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'message': _error};
+    }
+
+    final response = await http.get(
+      Uri.parse(endpoint),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    print('📤 Form preview response status code: ${response.statusCode}');
+    
+    // Add this detailed logging
+    if (response.statusCode == 200) {
+      final responseBody = response.body;
+      print('📤 Form preview raw response: $responseBody');
+      final Map<String, dynamic> responseData = json.decode(responseBody);
+      
+      // Log specific parts of the response
+      if (responseData.containsKey('columns')) {
+        print('📊 Columns found in response: ${responseData['columns'].length}');
+      } else {
+        print('❌ No columns found in response');
+      }
+      
+      if (responseData.containsKey('layout')) {
+        print('📋 Layout found in response: ${responseData['layout'].length} sections');
+      } else {
+        print('❌ No layout found in response');
+      }
+      
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {
+        'success': true, 
+        'data': responseData
+      };
+    } else {
+      String errorMsg = 'Failed to fetch form preview. Status code: ${response.statusCode}';
+      _error = errorMsg;
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'message': errorMsg};
+    }
+  } catch (e) {
+    String errorMsg = 'Error fetching form preview: $e';
+    _error = errorMsg;
+    print('❌ Error fetching form preview: $e');
+    _isLoading = false;
+    _safeNotifyListeners();
+    return {'success': false, 'message': errorMsg};
+  }
+}
+
+// Add this method to get form columns
+Future<List<ColumnInfo>> getColumns(String type) async {
+  if (_token.isEmpty) {
+    print('❌ No token available for getColumns');
+    return [];
+  }
+  
+  try {
+    final result = await getFormPreview(type, _token);
+    print('📊 getColumns result success: ${result['success']}');
+    
+    if (result['success'] && result['data'] != null) {
+      final data = result['data'];
+      
+      // Check if columns exist in the response
+      if (data.containsKey('columns') && data['columns'] is List) {
+        List<ColumnInfo> columns = [];
+        final columnData = data['columns'] as List<dynamic>;
+        
+        print('📊 Processing ${columnData.length} columns from API');
+        
+        for (var column in columnData) {
+          columns.add(ColumnInfo(
+            name: column['name'] ?? '',
+            label: column['label'] ?? '',
+            datatype: column['datatype'] ?? 'text',
+            required: column['required'] ?? false,
+            values: column['values'] ?? '',
+          ));
+        }
+        
+        print('📊 Successfully created ${columns.length} column objects');
+        return columns;
+      } 
+      // If no columns but layout exists, create default columns from layout fields
+      else if (data.containsKey('layout') && data['layout'] is List) {
+        print('📊 No columns found, generating from layout fields');
+        List<ColumnInfo> columns = [];
+        final layoutData = data['layout'] as List<dynamic>;
+        
+        // Extract all field names from layout sections
+        Set<String> fieldNames = {};
+        for (var section in layoutData) {
+          if (section is Map<String, dynamic> && section.containsKey('fields')) {
+            final fields = section['fields'] as List;
+            fieldNames.addAll(fields.cast<String>());
+          }
+        }
+        
+        print('📊 Creating ${fieldNames.length} columns from layout fields');
+        
+        // Create default ColumnInfo objects for each field
+        for (String fieldName in fieldNames) {
+          // Convert field name to label (e.g., "email_address" -> "Email Address")
+          String label = fieldName.replaceAll('_', ' ')
+              .split(' ')
+              .map((word) => word.isEmpty ? '' : '${word[0].toUpperCase()}${word.substring(1)}')
+              .join(' ');
+          
+          // Guess datatype based on field name
+          String datatype = 'text';
+          if (fieldName.contains('email')) datatype = 'email';
+          else if (fieldName.contains('phone')) datatype = 'phone';
+          else if (fieldName.contains('date')) datatype = 'date';
+          else if (fieldName.contains('price') || fieldName.contains('amount')) datatype = 'number';
+          
+          // Guess if field is required (common required fields)
+          bool required = ['name', 'email', 'phone', 'status'].contains(fieldName);
+          
+          // Guess dropdown values for common fields
+          String values = '';
+          if (fieldName == 'status') {
+            values = 'New,In Progress,Completed,Cancelled';
+          }
+          
+          columns.add(ColumnInfo(
+            name: fieldName,
+            label: label,
+            datatype: datatype,
+            required: required,
+            values: values,
+          ));
+        }
+        
+        print('📊 Successfully created ${columns.length} default column objects');
+        return columns;
+      } else {
+        print('❌ No columns or layout key in API response data');
+      }
+    } else {
+      print('❌ API call unsuccessful or empty data');
+    }
+    return [];
+  } catch (e) {
+    print('❌ Error parsing columns: $e');
+    return [];
+  }
+}
+
+Future<List<FormSection>> getFormLayout(String type) async {
+  if (_token.isEmpty) {
+    print('❌ No token available for getFormLayout');
+    return [];
+  }
+  
+  try {
+    final result = await getFormPreview(type, _token);
+    print('📋 getFormLayout result success: ${result['success']}');
+    
+    if (result['success'] && result['data'] != null) {
+      final data = result['data'];
+      if (data.containsKey('layout') && data['layout'] is List) {
+        List<FormSection> sections = [];
+        final layoutData = data['layout'] as List<dynamic>;
+        
+        print('📋 Processing ${layoutData.length} layout sections from API');
+        
+        for (var section in layoutData) {
+          if (section is Map<String, dynamic> && 
+              section.containsKey('title') && 
+              section.containsKey('fields')) {
+            sections.add(FormSection(
+              title: section['title'],
+              fields: List<String>.from(section['fields']),
+            ));
+          }
+        }
+        
+        print('📋 Successfully created ${sections.length} form sections');
+        return sections;
+      } else {
+        print('❌ No layout key or not a list in API response data');
+      }
+    } else {
+      print('❌ API call unsuccessful or empty data for form layout');
+    }
+    return [];
+  } catch (e) {
+    print('❌ Error parsing form layout: $e');
+    return [];
+  }
+}
+
+// Add this method to your DataProvider class in data_provider.dart
+
+Future<Map<String, dynamic>> fetchItemPreview(String type, String itemId, String token) async {
+  try {
+    final url = 'https://qa.api.bussus.com/v2/api/$type/preview?id=$itemId';
+    
+    print('🌐 Fetching item preview from: $url');
+    
+    final response = await http.get(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> responseData = json.decode(response.body);
+      print('📄 Item preview response received successfully');
+      return responseData;
+    } else {
+      print('❌ Failed to fetch item preview: ${response.statusCode}');
+      print('Response: ${response.body}');
+      throw Exception('Failed to fetch item preview: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('❌ Error fetching item preview: $e');
+    throw Exception('Error fetching item preview: $e');
+  }
+}
+// Add these new methods to your existing DataProvider class
+
+Future<Map<String, dynamic>> fetchItemDetails(String type, String itemId) async {
+  _isLoading = true;
+  _error = null;
+  _safeNotifyListeners();
+
+  Map<String, dynamic> result = {
+    'data': {},
+    'all_columns': [],
+    'visible_columns': [],
+    'layout': {'sections': []},
+    'tasks': [],
+  };
+
+  try {
+    if (_token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return result;
+    }
+
+    // Construct the URL for the details API
+    final url = 'https://qa.api.bussus.com/v2/api/$type/preview?id=$itemId';
+    print('🌐 Fetching details from: $url');
+
+    final response = await http.get(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $_token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    print('📤 Details response status code: ${response.statusCode}');
+    
+    if (response.statusCode == 200) {
+      result = json.decode(response.body);
+      _error = null;
+      print('📄 Successfully fetched item details');
+    } else if (response.statusCode == 401) {
+      _error = 'Authentication expired. Please log in again.';
+      print('⚠️ Authentication expired');
+    } else {
+      _error = 'Failed to load details. Status code: ${response.statusCode}';
+      print('❌ Failed to load details: ${response.body}');
+    }
+  } catch (e) {
+    _error = 'Error occurred: $e';
+    print('❌ Error fetching details: $e');
+  } finally {
+    _isLoading = false;
+    _safeNotifyListeners();
+  }
+  
+  return result;
+}
+
+Future<bool> deleteItem(String type, String itemId) async {
+  _isLoading = true;
+  _error = null;
+  _safeNotifyListeners();
+  
+  try {
+    if (_token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return false;
+    }
+    
+    final url = 'https://qa.api.bussus.com/v2/api/$type';
+    
+    print('🗑️ Attempting to delete item from: $url');
+    print('🗑️ Item ID to delete: $itemId');
+    
+    final response = await http.delete(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $_token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({
+        "ids": [itemId]
+      }),
+    );
+    
+    print('📤 Delete response status code: ${response.statusCode}');
+    print('📤 Delete response body: ${response.body}');
+    
+    if (response.statusCode == 200) {
+      _error = null;
+      print('✅ Item deleted successfully');
+      
+      // Remove the deleted item from our local lists
+      _items.removeWhere((item) => item.id == itemId);
+      _filteredItems.removeWhere((item) => item.id == itemId);
+      if (_originalItems.isNotEmpty) {
+        _originalItems.removeWhere((item) => item.id == itemId);
+      }
+      
+      _safeNotifyListeners();
+      return true;
+    } else {
+      try {
+        final responseData = json.decode(response.body);
+        _error = responseData['message'] ?? 'Failed to delete item';
+      } catch (e) {
+        _error = 'Failed to delete item. Status code: ${response.statusCode}';
+      }
+      
+      print('❌ Failed to delete item: $_error');
+      _safeNotifyListeners();
+      return false;
+    }
+  } catch (e) {
+    _error = 'Error deleting item: $e';
+    print('❌ Error deleting item: $e');
+    _safeNotifyListeners();
+    return false;
+  } finally {
+    _isLoading = false;
+    _safeNotifyListeners();
+  }
+}
 
   Future<Map<String, dynamic>> createTask(Map<String, dynamic> taskData, String token, String type) async {
     // Determine the correct endpoint based on the object type

@@ -4,8 +4,9 @@ import '../providers/auth_provider.dart';
 import '../providers/data_provider.dart';
 import '../models/dynamic_model.dart';
 import 'details_screen.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import '../theme/app_colors.dart';
+import '../theme/app_dimensions.dart';
+import '../theme/app_text_styles.dart';
 import '../theme/app_button_styles.dart';
 
 class EditItemScreen extends StatefulWidget {
@@ -35,59 +36,6 @@ class _EditItemScreenState extends State<EditItemScreen> {
   // Map to store field data types
   final Map<String, String> _fieldDataTypes = {};
 
-  // Define fallback picklist values for common fields
-  final Map<String, List<String>> _fallbackPicklistValues = {
-    'lead_status': [ 'New', 'Working-Contacted','follow Up', 'Unqualified', 'Closed Won', 'Closed Converted','Closed Rejected','Qualified','Lost'],
-    'lead_source': [ 'Google Ads', 'Facebook', 'India Mart', 'Phone Enquiry', 'Purchased List','partner Refferal', 'Other'],
-    'rating': ['Hot', 'Warm', 'Cold'],
-    'industry': ['Technology', 'Healthcare', 'Finance', 'Education', 'Manufacturing', 'Retail', 'Other'],
-    'priority': ['High', 'Medium', 'Low'],
-    'stage': ['Discovery', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'],
-    'status': ['Active', 'Inactive', 'Pending'],
-  };
-
-  // Add this method to your _EditItemScreenState class
-
-void _ensurePicklistValuesExist() {
-  // Check if we have any picklist fields without values
-  _fieldDataTypes.forEach((fieldName, dataType) {
-    if (dataType == 'picklist' && (!_picklistValues.containsKey(fieldName) || _picklistValues[fieldName]!.isEmpty)) {
-      print('⚠️ Missing values for picklist field: $fieldName');
-      
-      // Check if we have fallback values
-      if (_fallbackPicklistValues.containsKey(fieldName)) {
-        _picklistValues[fieldName] = _fallbackPicklistValues[fieldName]!;
-        print('✅ Applied fallback values for $fieldName: ${_picklistValues[fieldName]!.join(", ")}');
-      } else {
-        // Create generic values if no specific ones exist
-        switch (fieldName.toLowerCase()) {
-          case 'customer_type':
-            _picklistValues[fieldName] = ['--none--', 'Influencer', 'Contractor', 'Consumer', 'Architect', 'Engineer'];
-            break;
-          case 'customer_classification':
-            _picklistValues[fieldName] = ['--None--', 'Platinum', 'Gold', 'Diamond', 'regular'];
-            break;
-          case 'status':
-          case 'account_status':
-          case 'contact_status':
-            _picklistValues[fieldName] = ['Active', 'Inactive', 'Pending'];
-            break;
-          case 'type':
-          case 'account_type':
-          case 'contact_type':
-            _picklistValues[fieldName] = ['Standard', 'Premium', 'Enterprise', 'Other'];
-            break;
-          default:
-            // Generic fallback for any unhandled picklist
-            _picklistValues[fieldName] = ['Option 1', 'Option 2', 'Option 3'];
-            break;
-        }
-        print('ℹ️ Created generic values for $fieldName: ${_picklistValues[fieldName]!.join(", ")}');
-      }
-    }
-  });
-}
-
   @override
   void initState() {
     super.initState();
@@ -102,146 +50,145 @@ void _ensurePicklistValuesExist() {
   }
 
   Future<void> _loadItemDetails() async {
-  if (!_isInitialized) {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    try {
-      final dataProvider = Provider.of<DataProvider>(context, listen: false);
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
-      // Find the item in the existing list
-      _itemToEdit = dataProvider.items.firstWhere(
-        (item) => item.id == widget.itemId,
-        orElse: () => throw Exception('Item not found'),
-      );
-
-      // Fetch the item preview to get the layout and picklist values
-      await _fetchItemPreview(authProvider.token);
-      
-      // Make sure all picklist fields have values
-      _ensurePicklistValuesExist();
-
-      // Initialize controllers with the current values
-      for (var column in dataProvider.allColumns) {
-        String value = _itemToEdit!.getStringAttribute(column.name, defaultValue: '');
-        _controllers[column.name] = TextEditingController(text: value);
-      }
-
-      _isInitialized = true;
-    } catch (e) {
+    if (!_isInitialized) {
       setState(() {
-        _error = 'Failed to load item details: $e';
+        _isLoading = true;
+        _error = null;
       });
-      print('❌ Error loading item details: $_error');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-}
 
-  Future<void> _fetchItemPreview(String token) async {
-  try {
-    final url = 'https://qa.api.bussus.com/v2/api/${widget.type}/preview?id=${widget.itemId}';
-    
-    print('🌐 Fetching item preview from: $url');
-    
-    final response = await http.get(
-      Uri.parse(url),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
+      try {
+        final dataProvider = Provider.of<DataProvider>(context, listen: false);
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-    if (response.statusCode == 200) {
-      final Map<String, dynamic> responseData = json.decode(response.body);
-      print('📄 Item preview response received successfully');
-      
-      // Debug API response structure
-      print('📄 API response keys: ${responseData.keys.join(', ')}');
-      
-      // Store layout information
-      if (responseData.containsKey('layout')) {
-        _layoutData = responseData['layout'];
+        // Find the item in the existing list
+        _itemToEdit = dataProvider.items.firstWhere(
+          (item) => item.id == widget.itemId,
+          orElse: () => throw Exception('Item not found'),
+        );
+
+        // Fetch the item preview via the DataProvider
+        final previewData = await dataProvider.fetchItemPreview(
+          widget.type,
+          widget.itemId,
+          authProvider.token,
+        );
         
-        // Extract sections from layout
-        if (_layoutData != null && _layoutData!.containsKey('sections')) {
-          sections = List<Map<String, dynamic>>.from(_layoutData!['sections']);
-          print('📊 Loaded ${sections.length} sections from layout');
-        }
-      }
-      
-      // Process column metadata to find picklists
-      if (responseData.containsKey('all_columns')) {
-        List<dynamic> columns = responseData['all_columns'];
-        print('📋 Processing ${columns.length} columns from API response');
-        
-        for (var column in columns) {
-          // Store the data type for each field
-          if (column['name'] != null && column['datatype'] != null) {
-            String fieldName = column['name'];
-            String dataType = column['datatype'];
-            _fieldDataTypes[fieldName] = dataType;
-            
-            // Debug each column
-            print('📋 Column: ${fieldName}, datatype: ${dataType}');
-            
-            // For picklists, debug more detailed info
-            if (dataType == 'picklist') {
-              print('🔍 Picklist field found: ${fieldName}');
-              print('🔍 Picklist field structure: ${column.containsKey('picklist_values') ? 'Has picklist_values' : 'No picklist_values'} ${column['picklist_values'] is List ? '(List)' : column['picklist_values'] is Map ? '(Map)' : '(Unknown type)'}');
-              
-              if (column.containsKey('picklist_values')) {
-                print('🔍 Raw picklist_values: ${column['picklist_values']}');
-              }
-              
-              // Extract picklist values if available
-              List<String> values = [];
-              
-              // Try to extract picklist values from the response
-              if (column.containsKey('picklist_values')) {
-                if (column['picklist_values'] is List) {
-                  values = List<String>.from(column['picklist_values'].map((v) => 
-                    v is String ? v : (v['value'] ?? v.toString())));
-                } else if (column['picklist_values'] is Map) {
-                  values = List<String>.from(column['picklist_values'].values);
-                }
-              }
-              
-              // If no values found in API, use fallback values
-              if (values.isEmpty && _fallbackPicklistValues.containsKey(fieldName)) {
-                values = _fallbackPicklistValues[fieldName]!;
-                print('🔄 Using fallback values for ${fieldName}: ${values.join(", ")}');
-              } else if (values.isEmpty) {
-                print('⚠️ No values found for picklist ${fieldName} and no fallback available');
-              }
-              
-              if (values.isNotEmpty) {
-                _picklistValues[fieldName] = values;
-                print('📊 Loaded ${values.length} picklist values for ${fieldName}: ${values.join(", ")}');
-              }
-            }
+        // Store layout information
+        if (previewData.containsKey('layout')) {
+          _layoutData = previewData['layout'];
+          
+          // Extract sections from layout
+          if (_layoutData != null && _layoutData!.containsKey('sections')) {
+            sections = List<Map<String, dynamic>>.from(_layoutData!['sections']);
           }
         }
         
-        // Print all picklist fields found
-        print('📋 All picklist fields: ${_picklistValues.keys.join(', ')}');
-      } else {
-        print('⚠️ No all_columns found in API response');
+        // Process field data
+        if (previewData.containsKey('all_columns')) {
+          _processFieldData(previewData['all_columns']);
+        }
+        
+        // Make sure all picklist fields have values
+        _ensurePicklistValuesExist();
+
+        // Initialize controllers with the current values
+        for (var column in dataProvider.allColumns) {
+          String value = _itemToEdit!.getStringAttribute(column.name, defaultValue: '');
+          _controllers[column.name] = TextEditingController(text: value);
+        }
+
+        _isInitialized = true;
+      } catch (e) {
+        setState(() {
+          _error = 'Failed to load item details: $e';
+        });
+        print('❌ Error loading item details: $_error');
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
       }
-    } else {
-      print('❌ Failed to fetch item preview: ${response.statusCode}');
-      print('Response: ${response.body}');
     }
-  } catch (e) {
-    print('❌ Error fetching item preview: $e');
   }
-}
+
+  void _processFieldData(List<dynamic> columns) {
+    for (var column in columns) {
+      // Store the data type for each field
+      if (column['name'] != null && column['datatype'] != null) {
+        String fieldName = column['name'];
+        String dataType = column['datatype'];
+        _fieldDataTypes[fieldName] = dataType;
+        
+        // For picklists, extract values
+        if (dataType == 'picklist') {
+          List<String> values = [];
+          
+          // Try to extract picklist values from the response
+          if (column.containsKey('picklist_values')) {
+            if (column['picklist_values'] is List) {
+              values = List<String>.from(column['picklist_values'].map((v) => 
+                v is String ? v : (v['value'] ?? v.toString())));
+            } else if (column['picklist_values'] is Map) {
+              values = List<String>.from(column['picklist_values'].values);
+            }
+          }
+          
+          if (values.isNotEmpty) {
+            _picklistValues[fieldName] = values;
+          }
+        }
+      }
+    }
+  }
+
+  // Define fallback picklist values for common fields
+  final Map<String, List<String>> _fallbackPicklistValues = {
+    'lead_status': [ 'New', 'Working-Contacted','follow Up', 'Unqualified', 'Closed Won', 'Closed Converted','Closed Rejected','Qualified','Lost'],
+    'lead_source': [ 'Google Ads', 'Facebook', 'India Mart', 'Phone Enquiry', 'Purchased List','partner Refferal', 'Other'],
+    'rating': ['Hot', 'Warm', 'Cold'],
+    'industry': ['Technology', 'Healthcare', 'Finance', 'Education', 'Manufacturing', 'Retail', 'Other'],
+    'priority': ['High', 'Medium', 'Low'],
+    'stage': ['Discovery', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'],
+    'status': ['Active', 'Inactive', 'Pending'],
+  };
+
+  void _ensurePicklistValuesExist() {
+    // Check if we have any picklist fields without values
+    _fieldDataTypes.forEach((fieldName, dataType) {
+      if (dataType == 'picklist' && (!_picklistValues.containsKey(fieldName) || _picklistValues[fieldName]!.isEmpty)) {
+        print('⚠️ Missing values for picklist field: $fieldName');
+        
+        // Check if we have fallback values
+        if (_fallbackPicklistValues.containsKey(fieldName)) {
+          _picklistValues[fieldName] = _fallbackPicklistValues[fieldName]!;
+        } else {
+          // Create generic values if no specific ones exist
+          switch (fieldName.toLowerCase()) {
+            case 'customer_type':
+              _picklistValues[fieldName] = ['--none--', 'Influencer', 'Contractor', 'Consumer', 'Architect', 'Engineer'];
+              break;
+            case 'customer_classification':
+              _picklistValues[fieldName] = ['--None--', 'Platinum', 'Gold', 'Diamond', 'regular'];
+              break;
+            case 'status':
+            case 'account_status':
+            case 'contact_status':
+              _picklistValues[fieldName] = ['Active', 'Inactive', 'Pending'];
+              break;
+            case 'type':
+            case 'account_type':
+            case 'contact_type':
+              _picklistValues[fieldName] = ['Standard', 'Premium', 'Enterprise', 'Other'];
+              break;
+            default:
+              // Generic fallback for any unhandled picklist
+              _picklistValues[fieldName] = ['Option 1', 'Option 2', 'Option 3'];
+              break;
+          }
+        }
+      }
+    });
+  }
 
   Future<void> _saveChanges() async {
     setState(() {
@@ -289,7 +236,7 @@ void _ensurePicklistValuesExist() {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Changes saved successfully'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.success,
           ),
         );
         
@@ -312,7 +259,7 @@ void _ensurePicklistValuesExist() {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_error ?? 'Failed to save changes'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -326,7 +273,7 @@ void _ensurePicklistValuesExist() {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error saving changes: $e'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppColors.error,
         ),
       );
     } finally {
@@ -339,37 +286,30 @@ void _ensurePicklistValuesExist() {
   @override
   Widget build(BuildContext context) {
     final dataProvider = Provider.of<DataProvider>(context);
-    final cardColor = Colors.white;
+    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(
           'Edit ${_capitalizeFirstLetter(widget.type)}',
-          style: TextStyle(color: Colors.white),
         ),
-        backgroundColor: Colors.blue[700],
-        iconTheme: IconThemeData(color: Colors.white),
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _saveChanges,
             child: Text(
               'SAVE',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              style: TextStyle(color: AppColors.textWhite, fontWeight: FontWeight.bold),
             ),
           ),
         ],
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
       ),
-      backgroundColor: Colors.blue.shade50,
+      backgroundColor: AppColors.background,
       body: _isLoading ?
         Center(child: CircularProgressIndicator()) :
-        _buildForm(dataProvider, cardColor),
+        _buildForm(dataProvider, theme),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        backgroundColor: cardColor, // Match with card color
+        backgroundColor: AppColors.cardBackground,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.favorite), label: "Label"),
           BottomNavigationBarItem(icon: Icon(Icons.shopping_cart), label: "Leads"),
@@ -377,150 +317,147 @@ void _ensurePicklistValuesExist() {
           BottomNavigationBarItem(icon: Icon(Icons.menu), label: "Menu"),
         ],
         currentIndex: 1,
-        selectedItemColor: Colors.blue,
+        selectedItemColor: AppColors.primary,
       ),
     );
   }
 
- Widget _buildForm(DataProvider dataProvider, Color cardColor) {
-  if (_error != null) {
-    return Center(child: Text(_error!, style: TextStyle(color: Colors.red)));
-  }
+  Widget _buildForm(DataProvider dataProvider, ThemeData theme) {
+    if (_error != null) {
+      return Center(child: Text(_error!, style: TextStyle(color: AppColors.error)));
+    }
 
-  if (_itemToEdit == null) {
-    return Center(child: Text('Item not found'));
-  }
+    if (_itemToEdit == null) {
+      return Center(child: Text('Item not found'));
+    }
 
-  // Get all columns
-  final columns = dataProvider.allColumns;
-  final columnMap = {for (var col in columns) col.name: col};
+    // Get all columns
+    final columns = dataProvider.allColumns;
+    final columnMap = {for (var col in columns) col.name: col};
 
-  return SingleChildScrollView(
-    padding: EdgeInsets.all(16),
-    child: ConstrainedBox(
-      constraints: BoxConstraints(
-        minHeight: MediaQuery.of(context).size.height - 180, // Account for AppBar, padding, and bottom nav
-      ),
-      child: Card(
-        color: cardColor,
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        child: IntrinsicHeight(
-          child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween, // This will push buttons to bottom
-              children: [
-                // Form content in a column
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Top Horizontal Line
-                    Center(
-                      child: Container(
-                        width: 30,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[400],
-                          borderRadius: BorderRadius.circular(2),
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(AppDimensions.spacingL),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: MediaQuery.of(context).size.height - 180, // Account for AppBar, padding, and bottom nav
+        ),
+        child: Card(
+          elevation: AppDimensions.elevationM,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppDimensions.radiusS),
+          ),
+          child: IntrinsicHeight(
+            child: Padding(
+              padding: EdgeInsets.all(AppDimensions.spacingL),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Form content in a column
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Top Horizontal Line
+                      Center(
+                        child: Container(
+                          width: 30,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: AppColors.divider,
+                            borderRadius: BorderRadius.circular(AppDimensions.radiusXs),
+                          ),
+                          margin: EdgeInsets.only(bottom: AppDimensions.spacingL),
                         ),
-                        margin: EdgeInsets.only(bottom: 16),
                       ),
-                    ),
 
-                    if (sections.isEmpty)
-                      Center(child: Text("No form sections available")),
+                      if (sections.isEmpty)
+                        Center(child: Text("No form sections available", style: AppTextStyles.bodyMedium)),
 
-                    // Sections with fields
-                    ...sections.map((section) {
-                      final title = section["title"] as String;
-                      final fields = List<String>.from(section["fields"] ?? []);
-                      
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Section Title & Line Below It
-                          Padding(
-                            padding: const EdgeInsets.only(top: 16, bottom: 8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  title,
-                                  style: TextStyle(
-                                    fontSize: 16, 
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.black,
+                      // Sections with fields
+                      ...sections.map((section) {
+                        final title = section["title"] as String;
+                        final fields = List<String>.from(section["fields"] ?? []);
+                        
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Section Title & Line Below It
+                            Padding(
+                              padding: EdgeInsets.only(top: AppDimensions.spacingL, bottom: AppDimensions.spacingS),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    title,
+                                    style: AppTextStyles.subheading,
                                   ),
-                                ),
-                                SizedBox(height: 4),
-                                Divider(color: Colors.grey[400]),
-                              ],
+                                  SizedBox(height: AppDimensions.spacingXs),
+                                  Divider(color: AppColors.divider),
+                                ],
+                              ),
+                            ),
+                            // Fields in this section
+                            ...fields.map((fieldName) {
+                              if (columnMap.containsKey(fieldName)) {
+                                return _buildFormField(columnMap[fieldName]!, theme);
+                              }
+                              return SizedBox.shrink();
+                            }).toList(),
+                          ],
+                        );
+                      }).toList(),
+
+                      if (_error != null)
+                        Padding(
+                          padding: EdgeInsets.only(top: AppDimensions.spacingL),
+                          child: Text(
+                            _error!,
+                            style: TextStyle(color: AppColors.error),
+                          ),
+                        ),
+                    ],
+                  ),
+
+                  // Spacer that will push buttons to bottom when form content is short
+                  Spacer(),
+
+                  // Action buttons at bottom
+                  Column(
+                    children: [
+                      SizedBox(height: AppDimensions.spacingXl),
+                      // Button row with global styles
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: AppButtonStyles.secondaryButton,
+                              child: Text("Cancel"),
                             ),
                           ),
-                          // Fields in this section
-                          ...fields.map((fieldName) {
-                            if (columnMap.containsKey(fieldName)) {
-                              return _buildFormField(columnMap[fieldName]!, cardColor);
-                            }
-                            return SizedBox.shrink();
-                          }).toList(),
+                          SizedBox(width: AppDimensions.spacingL),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _saveChanges,
+                              style: AppButtonStyles.primaryButton,
+                              child: Text("Save"),
+                            ),
+                          ),
                         ],
-                      );
-                    }).toList(),
-
-                    if (_error != null)
-                      Padding(
-                        padding: EdgeInsets.only(top: 16),
-                        child: Text(
-                          _error!,
-                          style: TextStyle(color: Colors.red),
-                        ),
-                      ),
-                  ],
-                ),
-
-                // Spacer that will push buttons to bottom when form content is short
-                Spacer(),
-
-                // Action buttons at bottom
-                Column(
-                  children: [
-                    SizedBox(height: 24),
-                    // Updated button row with global styles
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: AppButtonStyles.secondaryButton,
-                          child: Text("Cancel"),
-                        ),
-                      ),
-                      SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _saveChanges,
-                          style: AppButtonStyles.primaryButton,
-                          child: Text("Save"),
-                        ),
                       ),
                     ],
                   ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
-  Widget _buildFormField(ColumnInfo column, Color cardColor) {
+  Widget _buildFormField(ColumnInfo column, ThemeData theme) {
     // Skip read-only fields
     if (_isReadOnlyField(column.name)) {
       return SizedBox.shrink();
@@ -542,25 +479,22 @@ void _ensurePicklistValuesExist() {
     bool isPicklist = _fieldDataTypes[column.name] == 'picklist';
     List<String>? picklistValues = _picklistValues[column.name];
     
-    // Debug print for this field
-    print('Field: $fieldName, Is picklist: $isPicklist, Values count: ${picklistValues?.length ?? 0}');
-    
     // Handle picklist fields (if we have values for them)
     if (isPicklist && picklistValues != null && picklistValues.isNotEmpty) {
       return Padding(
-        padding: EdgeInsets.symmetric(vertical: 8.0),
+        padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(height: 4),
+            SizedBox(height: AppDimensions.spacingXs),
             Stack(
               clipBehavior: Clip.none,
               children: [
                 Container(
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.black45),
-                    borderRadius: BorderRadius.circular(4),
-                    color: cardColor, // Match dropdown with card color
+                    border: Border.all(color: AppColors.divider),
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusXs),
+                    color: AppColors.cardBackground,
                   ),
                   child: DropdownButtonFormField<String>(
                     value: picklistValues.contains(currentValue) ? currentValue : null,
@@ -569,12 +503,12 @@ void _ensurePicklistValuesExist() {
                       if (!isRequired)
                         DropdownMenuItem<String>(
                           value: '',
-                          child: Text('-- None --'),
+                          child: Text('-- None --', style: AppTextStyles.bodyMedium),
                         ),
                       ...picklistValues.map((value) {
                         return DropdownMenuItem<String>(
                           value: value,
-                          child: Text(value),
+                          child: Text(value, style: AppTextStyles.bodyMedium),
                         );
                       }).toList(),
                     ],
@@ -584,13 +518,18 @@ void _ensurePicklistValuesExist() {
                       });
                     },
                     decoration: InputDecoration(
-                      contentPadding: EdgeInsets.fromLTRB(12, 16, 12, 8),
+                      contentPadding: EdgeInsets.fromLTRB(
+                        AppDimensions.spacingM, 
+                        AppDimensions.spacingL, 
+                        AppDimensions.spacingM, 
+                        AppDimensions.spacingS
+                      ),
                       border: InputBorder.none,
                       isDense: true,
                     ),
-                    icon: Icon(Icons.arrow_drop_down, color: Colors.black), // Changed to black
+                    icon: Icon(Icons.arrow_drop_down, color: AppColors.textPrimary),
                     isExpanded: true,
-                    dropdownColor: cardColor, // Match with card color
+                    dropdownColor: AppColors.cardBackground,
                   ),
                 ),
                 // Field label positioned on top of the border
@@ -598,14 +537,11 @@ void _ensurePicklistValuesExist() {
                   top: -10,
                   left: 10,
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 4),
-                    color: cardColor,
+                    padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingXs),
+                    color: AppColors.cardBackground,
                     child: Text(
                       "$fieldLabel${isRequired ? ' *' : ''}", 
-                      style: TextStyle(
-                        fontSize: 12, 
-                        color: Colors.black54,
-                      ),
+                      style: AppTextStyles.labelText,
                     ),
                   ),
                 ),
@@ -619,32 +555,40 @@ void _ensurePicklistValuesExist() {
     // For date fields, use a date picker
     if (_isDateField(column.name)) {
       return Padding(
-        padding: EdgeInsets.symmetric(vertical: 8.0),
+        padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
             TextFormField(
-              controller: _controllers[column.name],
-              decoration: _inputDecoration("", isRequired).copyWith(
-                suffixIcon: Icon(Icons.calendar_today, color: Colors.blue),
-                contentPadding: EdgeInsets.fromLTRB(12, 16, 12, 8),
-              ),
-              readOnly: true,
-              onTap: () => _showDatePicker(column.name),
-            ),
+  controller: _controllers[column.name],
+  decoration: InputDecoration(
+    suffixIcon: Icon(Icons.calendar_today, color: AppColors.primary),
+    contentPadding: EdgeInsets.fromLTRB(
+      AppDimensions.spacingM, 
+      AppDimensions.spacingL, 
+      AppDimensions.spacingM, 
+      AppDimensions.spacingS
+    ),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppDimensions.radiusXs),
+      borderSide: BorderSide(color: AppColors.divider),
+    ),
+    filled: true,
+    fillColor: AppColors.cardBackground,
+  ),
+  readOnly: true,
+  onTap: () => _showDatePicker(column.name),
+),
             // Field label positioned on top of the border
             Positioned(
               top: -10,
               left: 10,
               child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 4),
-                color: cardColor,
+                padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingXs),
+                color: AppColors.cardBackground,
                 child: Text(
                   "$fieldLabel${isRequired ? ' *' : ''}", 
-                  style: TextStyle(
-                    fontSize: 12, 
-                    color: Colors.black54,
-                  ),
+                  style: AppTextStyles.labelText,
                 ),
               ),
             ),
@@ -655,46 +599,53 @@ void _ensurePicklistValuesExist() {
 
     // For other fields, use TextFormField with inline label
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 8.0),
+      padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           TextFormField(
-            controller: _controllers[column.name],
-            keyboardType: _getKeyboardType(column),
-            decoration: _inputDecoration("", isRequired).copyWith(
-              contentPadding: EdgeInsets.fromLTRB(12, 16, 12, 8),
-            ),
-            validator: isRequired ? (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter ${fieldLabel.toLowerCase()}';
-              }
-              return null;
-            } : null,
-          ),
+  controller: _controllers[column.name],
+  keyboardType: _getKeyboardType(column),
+  decoration: InputDecoration(
+    contentPadding: EdgeInsets.fromLTRB(
+      AppDimensions.spacingM, 
+      AppDimensions.spacingL, 
+      AppDimensions.spacingM, 
+      AppDimensions.spacingS
+    ),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppDimensions.radiusXs),
+      borderSide: BorderSide(color: AppColors.divider),
+    ),
+    filled: true,
+    fillColor: AppColors.cardBackground,
+  ),
+  validator: isRequired ? (value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter ${fieldLabel.toLowerCase()}';
+    }
+    return null;
+  } : null,
+),
           // Field label positioned on top of the border
           Positioned(
             top: -10,
             left: 10,
             child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 4),
-              color: cardColor,
+              padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingXs),
+              color: AppColors.cardBackground,
               child: RichText(
                 text: TextSpan(
                   children: [
                     TextSpan(
                       text: fieldLabel,
-                      style: TextStyle(
-                        fontSize: 12, 
-                        color: Colors.black54, // Darker color for field labels
-                        // fontWeight: FontWeight.w500, // Added weight to make it more visible
-                      ),
+                      style: AppTextStyles.labelText,
                     ),
                     if (isRequired) TextSpan(
                       text: ' *',
                       style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.red, // Red asterisk for required fields
+                        fontSize: AppDimensions.textS,
+                        color: AppColors.error,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -750,9 +701,9 @@ void _ensurePicklistValuesExist() {
         return Theme(
           data: ThemeData.light().copyWith(
             colorScheme: ColorScheme.light(
-              primary: Colors.blue,
-              onPrimary: Colors.white,
-              onSurface: Colors.black,
+              primary: AppColors.primary,
+              onPrimary: AppColors.textWhite,
+              onSurface: AppColors.textPrimary,
             ),
           ),
           child: child!,
@@ -784,30 +735,6 @@ void _ensurePicklistValuesExist() {
     }
     
     return TextInputType.text;
-  }
-
-  InputDecoration _inputDecoration(String fieldLabel, bool isRequired) {
-    return InputDecoration(
-      floatingLabelBehavior: FloatingLabelBehavior.never,
-      contentPadding: EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-      border: OutlineInputBorder(
-        borderSide: BorderSide(color: Colors.black45),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderSide: BorderSide(color: Colors.black45),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderSide: BorderSide(color: Colors.blue, width: 2),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderSide: BorderSide(color: Colors.red),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      isDense: true,
-    );
   }
 
   String _capitalizeFirstLetter(String text) {
