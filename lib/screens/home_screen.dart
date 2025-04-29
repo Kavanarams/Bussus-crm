@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -6,6 +5,7 @@ import '../providers/dashboard_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/dashboard_item.dart';
 import '../widgets/widget_factory.dart';
+import '../widgets/user_profile_widget.dart'; // Import the new widget
 import 'list_screen.dart';
 import 'menu_screen.dart';
 
@@ -17,7 +17,7 @@ class MainLayout extends StatefulWidget {
   final String? screenType;
 
   // Remove the default key assignment to avoid duplicate key issues
-  MainLayout({Key? key, this.initialIndex = 0, this.screenType}) : super(key: key);
+  const MainLayout({super.key, this.initialIndex = 0, this.screenType});
 
   @override
   State<MainLayout> createState() => _MainLayoutState();
@@ -113,7 +113,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
             ],
           ),
           child: BottomNavigationBar(
-            key: ValueKey('bottom_nav_bar_${_forceRebuild}'), // Force rebuilding with key
+            key: ValueKey('bottom_nav_bar_$_forceRebuild'), // Force rebuilding with key
             currentIndex: _currentIndex,
             onTap: (index) {
               setState(() {
@@ -153,7 +153,7 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
 
 // Create a content-only version of HomeScreen (no Scaffold)
 class HomeScreenContent extends StatefulWidget {
-  const HomeScreenContent({Key? key}) : super(key: key);
+  const HomeScreenContent({super.key});
 
   @override
   _HomeScreenContentState createState() => _HomeScreenContentState();
@@ -228,7 +228,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               ),
             ),
             SizedBox(height: 16),
-            Container(
+            SizedBox(
               height: 200,
               child: chartWidget,
             ),
@@ -466,7 +466,8 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       children: [
         AppBar(
           title: Text('Home'),
-          automaticallyImplyLeading: false,
+          // Add the UserProfileWidget to the leading position of the AppBar
+          leading: const UserProfileWidget(),
           backgroundColor: Colors.blue[700],
           foregroundColor: Colors.white,
           actions: [
@@ -506,7 +507,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     ),
                   );
                 }
-
                 if (dashboardProvider.error.isNotEmpty) {
                   return Center(
                     child: Column(

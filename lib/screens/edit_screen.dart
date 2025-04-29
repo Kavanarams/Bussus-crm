@@ -13,7 +13,7 @@ class EditItemScreen extends StatefulWidget {
   final String type;
   final String itemId;
 
-  EditItemScreen({required this.type, required this.itemId});
+  const EditItemScreen({super.key, required this.type, required this.itemId});
 
   @override
   _EditItemScreenState createState() => _EditItemScreenState();
@@ -402,10 +402,10 @@ class _EditItemScreenState extends State<EditItemScreen> {
                                 return _buildFormField(columnMap[fieldName]!, theme);
                               }
                               return SizedBox.shrink();
-                            }).toList(),
+                            }),
                           ],
                         );
-                      }).toList(),
+                      }),
 
                       if (_error != null)
                         Padding(
@@ -510,7 +510,7 @@ class _EditItemScreenState extends State<EditItemScreen> {
                           value: value,
                           child: Text(value, style: AppTextStyles.bodyMedium),
                         );
-                      }).toList(),
+                      }),
                     ],
                     onChanged: (newValue) {
                       setState(() {
@@ -721,7 +721,7 @@ class _EditItemScreenState extends State<EditItemScreen> {
   // Helper method to determine keyboard type
   TextInputType _getKeyboardType(ColumnInfo column) {
     final name = column.name.toLowerCase();
-    final datatype = _fieldDataTypes[column.name]?.toLowerCase() ?? column.datatype?.toLowerCase() ?? '';
+    final datatype = _fieldDataTypes[column.name]?.toLowerCase() ?? column.datatype.toLowerCase() ?? '';
     
     if (datatype == 'email') {
       return TextInputType.emailAddress;

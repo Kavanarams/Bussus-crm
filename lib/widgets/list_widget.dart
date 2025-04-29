@@ -4,7 +4,7 @@ import '../models/dashboard_item.dart';
 class ListWidget extends StatelessWidget {
   final DashboardItem item;
 
-  const ListWidget({Key? key, required this.item}) : super(key: key);
+  const ListWidget({super.key, required this.item});
 
   @override
   Widget build(BuildContext context) {

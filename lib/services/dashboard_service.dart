@@ -14,7 +14,7 @@ class DashboardService {
       // Get token from your AuthProvider
       final token = authProvider.token;
 
-      if (token == null || token.isEmpty) {
+      if (token.isEmpty) {
         throw Exception('Authentication token is missing');
       }
 

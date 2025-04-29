@@ -20,27 +20,27 @@ import '../theme/app_decorations.dart';
 class ListScreen extends StatefulWidget {
   final String type;
 
-  ListScreen({required this.type});
+  const ListScreen({super.key, required this.type});
 
   @override
   _ListScreenState createState() => _ListScreenState();
 }
 
 class _ListScreenState extends State<ListScreen> {
-  bool _isInitialized = false;
+  final bool _isInitialized = false;
   bool _isLoading = true;
   bool _isScrolledToBottom = false;
 
   // Filter and sort state
   final Map<String, TextEditingController> _filterControllers = {};
   String? _activeSortColumn;
-  bool _sortAscending = true;
-  Map<String, String> _columnLabels = {};
+  final bool _sortAscending = true;
+  final Map<String, String> _columnLabels = {};
 
   // Search state variables
   bool isSearchMode = false;
-  TextEditingController _searchController = TextEditingController();
-  FocusNode _searchFocusNode = FocusNode();
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   Timer? _searchDebounce;
 
   @override
@@ -553,7 +553,7 @@ class _ListScreenState extends State<ListScreen> {
                                     },
                                   ),
                                 );
-                              }).toList(),
+                              }),
                             ],
                           ),
                         ),
@@ -668,7 +668,7 @@ class _ListScreenState extends State<ListScreen> {
                             // Left padding for labels
                             SizedBox(width: AppDimensions.spacingS),
                             // Fixed width container for labels
-                            Container(
+                            SizedBox(
                               width: 110, // Fixed width for all labels
                               child: Text(
                                 columnLabels[column] ?? column, // Using the label from columnLabels

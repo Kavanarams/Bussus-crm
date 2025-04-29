@@ -11,11 +11,11 @@ class TaskFormScreen extends StatefulWidget {
   final String? relatedObjectName;
 
   const TaskFormScreen({
-    Key? key,
+    super.key,
     required this.relatedObjectId,
     required this.relatedObjectType,
     this.relatedObjectName,
-  }) : super(key: key);
+  });
 
   @override
   _TaskFormScreenState createState() => _TaskFormScreenState();
@@ -95,7 +95,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
             clipBehavior: Clip.none,
             children: [
               // The input field or dropdown with appropriate constraints
-              Container(
+              SizedBox(
                 width: double.infinity,
                 child: child,
               ),
@@ -342,78 +342,116 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
     );
   }
 
-  Future<void> _saveTask() async {
-    // Reset all error flags
-    setState(() {
-      fieldErrors = {
-        'subject': subjectController.text.isEmpty,
-        'dueDate': dueDateController.text.isEmpty,
-        'assignedTo': assignedToController.text.isEmpty,
-      };
-    });
-
-    // Check if any field is empty
-    if (fieldErrors.values.contains(true)) {
-      showTopSnackBar(
-        message: 'Please fill in all required fields',
-        backgroundColor: Theme.of(context).colorScheme.error,
-      );
-      return;
-    }
-
-    setState(() {
-      _isSaving = true;
-    });
-
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final dataProvider = Provider.of<DataProvider>(context, listen: false);
-    final token = authProvider.token;
-
-    final taskData = {
-      'subject': subjectController.text,
-      'status': selectedStatus,
-      'due_date': dueDateController.text,
-      'assigned_to': assignedToController.text,
-      'related_object_id': widget.relatedObjectId,
-      'related_to': widget.relatedObjectName ?? widget.relatedObjectType,
-      'user_id': 20, // Using the user_id from the example
+ Future<void> _saveTask() async {
+  // Reset all error flags
+  setState(() {
+    fieldErrors = {
+      'subject': subjectController.text.isEmpty,
+      'dueDate': dueDateController.text.isEmpty,
+      'assignedTo': assignedToController.text.isEmpty,
     };
+  });
 
-    try {
-      // Using the data provider's createTask method
-      final result = await dataProvider.createTask(
-        taskData, 
-        token, 
-        widget.relatedObjectType
+  // Check if any field is empty
+  if (fieldErrors.values.contains(true)) {
+    showTopSnackBar(
+      message: 'Please fill in all required fields',
+      backgroundColor: Theme.of(context).colorScheme.error,
+    );
+    return;
+  }
+
+  // Check if assignedTo field has content
+  if (assignedToController.text.trim().isEmpty) {
+    setState(() {
+      fieldErrors['assignedTo'] = true;
+    });
+    showTopSnackBar(
+      message: 'Please specify a user to assign the task to',
+      backgroundColor: Theme.of(context).colorScheme.error,
+    );
+    return;
+  }
+
+  setState(() {
+    _isSaving = true;
+  });
+
+  final authProvider = Provider.of<AuthProvider>(context, listen: false);
+  final dataProvider = Provider.of<DataProvider>(context, listen: false);
+  final token = authProvider.token;
+  
+  // Try to get user ID from data provider based on assigned user's name
+  Map<String, dynamic>? userInfo;
+  try {
+    userInfo = await dataProvider.getUserByName(assignedToController.text, token);
+  } catch (e) {
+    print('❌ Error in getUserByName: $e');
+  }
+  
+  // Check if we found a valid user ID
+  if (userInfo == null || !userInfo.containsKey('id')) {
+    setState(() {
+      _isSaving = false;
+      fieldErrors['assignedTo'] = true;
+    });
+    showTopSnackBar(
+      message: 'Could not find a user with the name "${assignedToController.text}"',
+      backgroundColor: Colors.red,
+    );
+    return;
+  }
+  
+  final userId = userInfo['id'];
+  print('✅ Found user ID: $userId for ${assignedToController.text}');
+
+  final taskData = {
+    'subject': subjectController.text,
+    'status': selectedStatus,
+    'due_date': dueDateController.text,
+    'assigned_to_id': userId, // The specific user ID we found
+    'assigned_to': assignedToController.text, // Also include the display name
+    'related_object_id': widget.relatedObjectId,
+    'related_to': widget.relatedObjectName ?? widget.relatedObjectType,
+  };
+
+  print('📦 Final task data: $taskData');
+
+  try {
+    // Using the data provider's createTask method
+    final result = await dataProvider.createTask(
+      taskData, 
+      token, 
+      widget.relatedObjectType
+    );
+
+    if (result['success']) {
+      // Success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Task added successfully'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.fixed,
+          duration: Duration(seconds: 3),
+        ),
       );
-
-      if (result['success']) {
-        // Success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Task added successfully'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.fixed,
-            duration: Duration(seconds: 3),
-          ),
-        );
-        Navigator.pop(context, true);
-      } else {
-        showTopSnackBar(
-          message: result['message'] ?? 'Failed to add task',
-          backgroundColor: Colors.red,
-        );
-      }
-    } catch (e) {
-      print('❌ Error creating task: $e');
+      Navigator.pop(context, true);
+    } else {
       showTopSnackBar(
-        message: 'Error creating task: $e',
+        message: result['message'] ?? 'Failed to add task',
         backgroundColor: Colors.red,
       );
-    } finally {
-      setState(() {
-        _isSaving = false;
-      });
     }
+  } catch (e) {
+    print('❌ Error creating task: $e');
+    showTopSnackBar(
+      message: 'Error creating task: $e',
+      backgroundColor: Colors.red,
+    );
+  } finally {
+    setState(() {
+      _isSaving = false;
+    });
   }
+}
 }

@@ -18,7 +18,6 @@ class AppTheme {
         primary: AppColors.primary,
         secondary: AppColors.primaryDark,
         error: AppColors.error,
-        background: AppColors.background,
         surface: AppColors.cardBackground,
       ),
       

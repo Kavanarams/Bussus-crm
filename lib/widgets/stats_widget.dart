@@ -4,7 +4,7 @@ import '../models/dashboard_item.dart';
 class StatsWidget extends StatelessWidget {
   final DashboardItem item;
 
-  const StatsWidget({Key? key, required this.item}) : super(key: key);
+  const StatsWidget({super.key, required this.item});
 
   @override
   Widget build(BuildContext context) {

@@ -4,16 +4,21 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
+import '../providers/data_provider.dart'; // Import DataProvider
+import '../theme/app_colors.dart';
+import '../theme/app_dimensions.dart';
+import '../theme/app_text_styles.dart';
+import '../theme/app_button_styles.dart';
+import '../theme/app_decorations.dart';
 import 'taskeditscreen.dart';
 
 class TaskDetailScreen extends StatefulWidget {
   final String taskId;
   
-
   const TaskDetailScreen({
-    Key? key,
+    super.key,
     required this.taskId,
-  }) : super(key: key);
+  });
 
   @override
   _TaskDetailScreenState createState() => _TaskDetailScreenState();
@@ -23,8 +28,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   bool _isLoading = true;
   Map<String, dynamic> _taskDetails = {};
   String? _error;
-  bool _isEditing = false;
-  bool _debugMode = true;
+  final bool _isEditing = false;
+  final bool _debugMode = true;
   
   // Controllers for editing fields
   final Map<String, TextEditingController> _controllers = {};
@@ -32,10 +37,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   final GlobalKey _moreButtonKey = GlobalKey();
 
   void _logDebug(String message) {
-  if (_debugMode) {
-    print('📌 DEBUG: $message');
+    if (_debugMode) {
+      print('📌 DEBUG: $message');
+    }
   }
-}
 
   @override
   void initState() {
@@ -58,6 +63,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final dataProvider = Provider.of<DataProvider>(context, listen: false);
       final token = authProvider.token;
 
       // Check if token exists
@@ -69,62 +75,26 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         return;
       }
 
-      // Construct the URL for the task details API
-      final url = 'https://qa.api.bussus.com/v2/api/task?id=${widget.taskId}';
+      // Use DataProvider to fetch task details
+      final result = await dataProvider.fetchTaskDetails(widget.taskId, token);
 
-      print('🌐 Fetching task details from: $url');
-
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      print('📤 Response status code: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        // Handle the response based on whether it's a List or Map
-        final dynamic responseData = json.decode(response.body);
-        
-        if (responseData is List && responseData.isNotEmpty) {
-          // If the response is directly a List, use the first item
-          _taskDetails = Map<String, dynamic>.from(responseData[0]);
-          print('📊 Loaded task details directly from list response: $_taskDetails');
-        } else if (responseData is Map) {
-          // If the response is a Map with a 'preview' key that is a List
-          if (responseData.containsKey('preview') && responseData['preview'] is List && responseData['preview'].isNotEmpty) {
-            _taskDetails = Map<String, dynamic>.from(responseData['preview'][0]);
-            print('📊 Loaded task details from preview in map response: $_taskDetails');
-          } else {
-            // If the response is a Map with direct task details
-            _taskDetails = Map<String, dynamic>.from(responseData);
-            print('📊 Loaded task details directly from map response: $_taskDetails');
-          }
-        } else {
-          setState(() {
-            _error = 'Unexpected response format or empty response.';
-          });
-          print('❌ Unexpected response format: $responseData');
-        }
-        
-        // Initialize controllers with current values
-        _initControllers();
-      } else if (response.statusCode == 401) {
+      if (result['success']) {
         setState(() {
-          _error = 'Authentication expired. Please log in again.';
+          _taskDetails = result['data'];
+          _error = null;
+          // Initialize controllers with current values
+          _initControllers();
         });
       } else {
         setState(() {
-          _error = 'Failed to load task details. Status code: ${response.statusCode}';
+          _error = result['error'];
         });
       }
     } catch (e) {
       setState(() {
         _error = 'Error occurred: $e';
       });
-      print('❌ Error fetching task details: $e');
+      print('❌ Error in _loadTaskDetails: $e');
     } finally {
       setState(() {
         _isLoading = false;
@@ -146,179 +116,179 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
   
   void _navigateToEditTask() async {
-  _logDebug('Navigating to edit task screen for task ID: ${widget.taskId}');
-  
-  try {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => TaskEditScreen(
-          taskId: widget.taskId,
-          taskDetails: _taskDetails,
+    _logDebug('Navigating to edit task screen for task ID: ${widget.taskId}');
+    
+    try {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => TaskEditScreen(
+            taskId: widget.taskId,
+            taskDetails: _taskDetails,
+          ),
         ),
-      ),
-    );
-    
-    _logDebug('Returned from edit task screen with result: $result');
-    
-    if (result == true) {
-      _logDebug('Reloading task details');
-      await _loadTaskDetails();
+      );
       
+      _logDebug('Returned from edit task screen with result: $result');
+      
+      if (result == true) {
+        _logDebug('Reloading task details');
+        await _loadTaskDetails();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Task details updated'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      _logDebug('Error navigating to edit screen: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Task details updated'),
-          backgroundColor: Colors.green,
+          content: Text('Error opening edit screen: $e'),
+          backgroundColor: AppColors.error,
         ),
       );
     }
-  } catch (e) {
-    _logDebug('Error navigating to edit screen: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Error opening edit screen: $e'),
-        backgroundColor: Colors.red,
-      ),
-    );
   }
-}
   
   void _showMoreOptionsDialog() {
-  _logDebug('Show more options dialog called');
-  
-  try {
-    // Check if context is valid
-    if (_moreButtonKey.currentContext == null) {
-      _logDebug('More button key context is null');
+    _logDebug('Show more options dialog called');
+    
+    try {
+      // Check if context is valid
+      if (_moreButtonKey.currentContext == null) {
+        _logDebug('More button key context is null');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot show options menu'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
+      
+      final RenderBox renderBox = _moreButtonKey.currentContext!.findRenderObject() as RenderBox;
+      final position = renderBox.localToGlobal(Offset.zero);
+      
+      _logDebug('Showing menu at position: $position');
+      
+      showMenu(
+        context: context,
+        position: RelativeRect.fromLTRB(
+          position.dx,
+          position.dy + renderBox.size.height,
+          position.dx + renderBox.size.width,
+          position.dy + renderBox.size.height + 10,
+        ),
+        color: Colors.white,
+        elevation: AppDimensions.elevationM,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppDimensions.radiusS),
+        ),
+        items: [
+          PopupMenuItem(
+            child: Row(
+              children: [
+                Icon(Icons.check_circle, color: AppColors.primary, size: AppDimensions.iconM),
+                SizedBox(width: AppDimensions.spacingS),
+                Text('Mark Complete', style: AppTextStyles.actionText),
+              ],
+            ),
+            onTap: () {
+              // Need to use Future.delayed because menu is closing
+              Future.delayed(Duration.zero, () {
+                _markTaskComplete();
+              });
+            },
+          ),
+          PopupMenuItem(
+            child: Row(
+              children: [
+                Icon(Icons.calendar_today, color: AppColors.primary, size: AppDimensions.iconM),
+                SizedBox(width: AppDimensions.spacingS),
+                Text('Change Date', style: AppTextStyles.actionText),
+              ],
+            ),
+            onTap: () {
+              // Need to use Future.delayed because menu is closing
+              Future.delayed(Duration.zero, () {
+                _changeTaskDate();
+              });
+            },
+          ),
+        ],
+      );
+    } catch (e) {
+      _logDebug('Error showing more options menu: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Cannot show options menu'),
-          backgroundColor: Colors.red,
+          content: Text('Error showing options menu: $e'),
+          backgroundColor: AppColors.error,
         ),
       );
-      return;
     }
-    
-    final RenderBox renderBox = _moreButtonKey.currentContext!.findRenderObject() as RenderBox;
-    final position = renderBox.localToGlobal(Offset.zero);
-    
-    _logDebug('Showing menu at position: $position');
-    
-    showMenu(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        position.dx,
-        position.dy + renderBox.size.height,
-        position.dx + renderBox.size.width,
-        position.dy + renderBox.size.height + 10,
-      ),
-      color: Colors.white,
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
-      items: [
-        PopupMenuItem(
-          child: Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.blue, size: 20),
-              SizedBox(width: 8),
-              Text('Mark Complete', style: TextStyle(color: Colors.blue)),
-            ],
-          ),
-          onTap: () {
-            // Need to use Future.delayed because menu is closing
-            Future.delayed(Duration.zero, () {
-              _markTaskComplete();
-            });
-          },
-        ),
-        PopupMenuItem(
-          child: Row(
-            children: [
-              Icon(Icons.calendar_today, color: Colors.blue, size: 20),
-              SizedBox(width: 8),
-              Text('Change Date', style: TextStyle(color: Colors.blue)),
-            ],
-          ),
-          onTap: () {
-            // Need to use Future.delayed because menu is closing
-            Future.delayed(Duration.zero, () {
-              _changeTaskDate();
-            });
-          },
-        ),
-      ],
-    );
-  } catch (e) {
-    _logDebug('Error showing more options menu: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Error showing options menu: $e'),
-        backgroundColor: Colors.red,
-      ),
-    );
   }
-}
   
   void _markTaskComplete() {
-  _logDebug('Mark task complete called');
-  
-  try {
-    // Implement your API call here to mark the task as complete
-    // For now, show a placeholder message
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Marking task as complete...'),
-        backgroundColor: Colors.blue,
-      ),
-    );
+    _logDebug('Mark task complete called');
     
-    // In the real implementation, you would update the status and reload the task
-  } catch (e) {
-    _logDebug('Error marking task complete: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Error marking task complete: $e'),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-}
-  
-  void _changeTaskDate() async {
-  _logDebug('Change task date called');
-  
-  try {
-    final DateTime? pickedDate = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2100),
-    );
-    
-    _logDebug('Selected date: $pickedDate');
-    
-    if (pickedDate != null) {
-      // Implement your API call here to change the task date
+    try {
+      // Implement your API call here to mark the task as complete
       // For now, show a placeholder message
       ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Marking task as complete...'),
+          backgroundColor: AppColors.primary,
+        ),
+      );
+      
+      // In the real implementation, you would update the status and reload the task
+    } catch (e) {
+      _logDebug('Error marking task complete: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Date change functionality will be implemented'),
-          backgroundColor: Colors.blue,
+          content: Text('Error marking task complete: $e'),
+          backgroundColor: AppColors.error,
         ),
       );
     }
-  } catch (e) {
-    _logDebug('Error changing task date: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Error changing task date: $e'),
-        backgroundColor: Colors.red,
-      ),
-    );
   }
-}
+  
+  void _changeTaskDate() async {
+    _logDebug('Change task date called');
+    
+    try {
+      final DateTime? pickedDate = await showDatePicker(
+        context: context,
+        initialDate: DateTime.now(),
+        firstDate: DateTime.now(),
+        lastDate: DateTime(2100),
+      );
+      
+      _logDebug('Selected date: $pickedDate');
+      
+      if (pickedDate != null) {
+        // Implement your API call here to change the task date
+        // For now, show a placeholder message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Date change functionality will be implemented'),
+            backgroundColor: AppColors.primary,
+          ),
+        );
+      }
+    } catch (e) {
+      _logDebug('Error changing task date: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error changing task date: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
 
 
   Future<void> _deleteTask() async {
@@ -330,31 +300,20 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppDimensions.radiusS),
         ),
-        title: Text('Confirm Delete'),
-        content: Text('Are you sure you want to delete this task?'),
+        title: Text('Confirm Delete', style: AppTextStyles.cardTitle),
+        content: Text('Are you sure you want to delete this task?', style: AppTextStyles.bodyMedium),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel', style: TextStyle(color: Colors.black)),
-            style: TextButton.styleFrom(
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-                side: BorderSide(color: Colors.grey.shade300),
-              ),
-            ),
+            style: AppButtonStyles.dialogCancelButton,
+            child: Text('Cancel', style: AppTextStyles.secondaryText),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete', style: TextStyle(color: Colors.white)),
-            style: TextButton.styleFrom(
-              backgroundColor: Colors.blue,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-            ),
+            style: AppButtonStyles.dialogConfirmButton,
+            child: Text('Delete', style: AppTextStyles.statusBadge),
           ),
         ],
       ),
@@ -366,52 +325,35 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       _logDebug('Proceeding with delete');
       
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final dataProvider = Provider.of<DataProvider>(context, listen: false);
       final token = authProvider.token;
       
       if (token.isEmpty) {
         throw Exception('Authentication token is empty');
       }
       
-      final url = 'https://qa.api.bussus.com/v2/api/task';
+      _logDebug('Calling deleteTask method from DataProvider');
       
-      _logDebug('Sending DELETE request to $url with task ID: ${widget.taskId}');
-      
-      final response = await http.delete(
-        Uri.parse(url),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          "ids": [widget.taskId]
-        }),
-      );
+      final result = await dataProvider.deleteTask(widget.taskId, token);
 
-      _logDebug('Delete response status: ${response.statusCode}');
-      _logDebug('Delete response body: ${response.body}');
+      _logDebug('Delete result: $result');
 
-      if (response.statusCode == 200) {
+      if (result['success']) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Task deleted successfully'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.success,
           ),
         );
         Navigator.pop(context, true); // Return true to refresh the previous screen
       } else {
-        String errorMessage;
-        try {
-          final responseData = json.decode(response.body);
-          errorMessage = responseData['message'] ?? 'Failed to delete task';
-        } catch (e) {
-          errorMessage = 'Failed to delete task. Status code: ${response.statusCode}';
-        }
-
+        String errorMessage = result['error'] ?? 'Failed to delete task';
         _logDebug('Error message: $errorMessage');
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -421,7 +363,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Error deleting task: $e'),
-        backgroundColor: Colors.red,
+        backgroundColor: AppColors.error,
       ),
     );
   }
@@ -429,41 +371,35 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'Task Details',
-          style: const TextStyle(color: Colors.white, fontSize: 18)
-        ),
-        backgroundColor: Colors.blue[700],
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
+        title: const Text('Task Details'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search, color: Colors.white),
+            icon: const Icon(Icons.search),
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Search functionality coming soon')),
+                const SnackBar(content: Text('Search functionality coming soon')),
               );
             },
           ),
           IconButton(
-            icon: const Icon(Icons.notifications, color: Colors.white),
+            icon: const Icon(Icons.notifications),
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Notifications functionality coming soon')),
+                const SnackBar(content: Text('Notifications functionality coming soon')),
               );
             },
           ),
         ],
       ),
-      backgroundColor: Colors.blue.shade50,
+      backgroundColor: AppColors.background,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Text(_error!))
+              ? Center(child: Text(_error!, style: AppTextStyles.bodyMedium))
               : SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -480,102 +416,97 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Widget _buildHeaderWithActions() {
-  return Container(
-    color: Colors.white,
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Row with action icons
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center, // Center the buttons
-          children: [
-            // Edit Icon
-            _buildActionButton(
-              icon: Icons.edit,
-              label: 'Edit',
-              onTap: _navigateToEditTask,
-            ),
-            
-            // Delete Icon
-            _buildActionButton(
-              icon: Icons.delete,
-              label: 'Delete',
-              onTap: _deleteTask,
-            ),
-            
-            // More Icon
-            _buildActionButton(
-              icon: Icons.more_horiz,
-              label: 'More',
-              onTap: _showMoreOptionsDialog,
-              key: _moreButtonKey,
-            ),
-          ],
-        ),
-        
-        SizedBox(height: 10),
-        
-        // Task type
-        Text(
-          'Task',
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        
-        // Task subject
-        Text(
-          _taskDetails['subject'] ?? 'Task',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.black,
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-  Widget _buildActionButton({
-  required IconData icon,
-  required String label,
-  required VoidCallback onTap,
-  Key? key,
-}) {
-  return Padding(
-    padding: EdgeInsets.symmetric(horizontal: 30.0),
-    child: GestureDetector( // Use GestureDetector instead of just Column
-      onTap: onTap, // Handle tap here
+    return Container(
+      color: Colors.white,
+      padding: EdgeInsets.symmetric(
+        horizontal: AppDimensions.spacingL,
+        vertical: AppDimensions.spacingS
+      ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
-        key: key,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(20),
-            ),
-            padding: EdgeInsets.all(8),
-            child: Icon(
-              icon, 
-              color: Colors.blue, 
-              size: 20,
-            ),
+          // Row with action icons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center, // Center the buttons
+            children: [
+              // Edit Icon
+              _buildActionButton(
+                icon: Icons.edit,
+                label: 'Edit',
+                onTap: _navigateToEditTask,
+              ),
+              
+              // Delete Icon
+              _buildActionButton(
+                icon: Icons.delete,
+                label: 'Delete',
+                onTap: _deleteTask,
+              ),
+              
+              // More Icon
+              _buildActionButton(
+                icon: Icons.more_horiz,
+                label: 'More',
+                onTap: _showMoreOptionsDialog,
+                key: _moreButtonKey,
+              ),
+            ],
           ),
-          SizedBox(height: 4),
+          
+          SizedBox(height: AppDimensions.spacingM),
+          
+          // Task type
           Text(
-            label, 
-            style: TextStyle(fontSize: 10, color: Colors.blue),
+            'Task',
+            style: AppTextStyles.secondaryText,
+          ),
+          
+          // Task subject
+          Text(
+            _taskDetails['subject'] ?? 'Task',
+            style: AppTextStyles.heading,
           ),
         ],
       ),
-    ),
-  );
-}
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Key? key,
+  }) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingXl),
+      child: GestureDetector( // Use GestureDetector instead of just Column
+        onTap: onTap, // Handle tap here
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          key: key,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.actionButtonBackground,
+                borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
+              ),
+              padding: EdgeInsets.all(AppDimensions.spacingS),
+              child: Icon(
+                icon, 
+                color: AppColors.primary, 
+                size: AppDimensions.iconM,
+              ),
+            ),
+            SizedBox(height: AppDimensions.spacingXs),
+            Text(
+              label, 
+              style: AppTextStyles.smallActionText,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildTaskDetailsCard() {
     final displayFields = [
@@ -592,25 +523,17 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
 
     return Card(
-      margin: const EdgeInsets.all(16),
-      color: Colors.white,
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
+      margin: EdgeInsets.all(AppDimensions.spacingL),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.all(AppDimensions.spacingM),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'Task Information',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+              style: AppTextStyles.cardTitle,
             ),
-            SizedBox(height: 12),
+            SizedBox(height: AppDimensions.spacingM),
             
             // Display all fields
             ...displayFields.map((field) {
@@ -621,10 +544,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     field['label']!,
                     _formatValue(_taskDetails[field['field']]),
                   ),
-                  Divider(height: 20),
+                  Divider(height: AppDimensions.spacingXl),
                 ],
               );
-            }).toList(),
+            }),
           ],
         ),
       ),
@@ -633,25 +556,18 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   
   Widget _buildInfoItem(String title, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingXxs),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey[600],
-            ),
+            style: AppTextStyles.fieldLabel,
           ),
-          SizedBox(height: 4),
+          SizedBox(height: AppDimensions.spacingXs),
           Text(
             value,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Colors.black,
-            ),
+            style: AppTextStyles.fieldValue,
           ),
         ],
       ),
@@ -675,11 +591,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   Color _getStatusColor(String? status) {
     switch (status?.toLowerCase()) {
       case 'completed':
-        return Colors.green;
+        return AppColors.success;
       case 'in progress':
-        return Colors.blue;
+        return AppColors.primary;
       case 'on hold':
-        return Colors.orange;
+        return AppColors.warning;
       case 'not started':
         return Colors.grey;
       case 'planned':
@@ -687,25 +603,21 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       case 'follow up':
         return Colors.teal;
       case 'cancelled':
-        return Colors.red;
+        return AppColors.error;
       default:
         return Colors.grey;
     }
   }
-   Widget _buildRelatedActivitiesSection() {
+  
+  Widget _buildRelatedActivitiesSection() {
     final activities = _taskDetails['related_activities'] as List? ?? [];
     
     return Card(
-      margin: const EdgeInsets.all(16),
-      elevation: 2,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-      ),
+      margin: EdgeInsets.all(AppDimensions.spacingL),
       child: Column(
         children: [
           Padding(
-            padding: EdgeInsets.all(12),
+            padding: EdgeInsets.all(AppDimensions.spacingM),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -713,22 +625,19 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   children: [
                     Text(
                       'Open Activities',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: AppTextStyles.cardTitle,
                     ),
-                    SizedBox(width: 8),
+                    SizedBox(width: AppDimensions.spacingS),
                     Container(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingS, vertical: AppDimensions.spacingXxs),
                       decoration: BoxDecoration(
-                        color: Colors.blue[100],
-                        borderRadius: BorderRadius.circular(12),
+                        color: AppColors.statusBadgeBg,
+                        borderRadius: BorderRadius.circular(AppDimensions.radiusM),
                       ),
                       child: Text(
                         '${activities.length}',
                         style: TextStyle(
-                          color: Colors.blue[800],
+                          color: AppColors.statusBadgeText,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -743,13 +652,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           
           activities.isEmpty
               ? Padding(
-                  padding: const EdgeInsets.all(12.0),
+                  padding: EdgeInsets.all(AppDimensions.spacingM),
                   child: Text(
                     'No activities found',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
+                    style: AppTextStyles.secondaryText,
                   ),
                 )
               : Column(
@@ -774,14 +680,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         },
                         child: Container(
                           width: double.infinity,
-                          padding: EdgeInsets.symmetric(vertical: 12),
+                          padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingM),
                           child: Center(
                             child: Text(
                               'View All',
-                              style: TextStyle(
-                                color: Colors.blue[700],
-                                fontWeight: FontWeight.bold,
-                              ),
+                              style: AppTextStyles.actionText,
                             ),
                           ),
                         ),
@@ -793,75 +696,52 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       ),
     );
   }
+  
   Widget _buildActivityItem(Map<String, dynamic> activity) {
     return ListTile(
       dense: true,
-      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingL, vertical: AppDimensions.spacingXs),
       title: Text(
         activity['subject'] ?? 'No Subject',
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-          fontSize: 16,
-        ),
+        style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.bold),
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(height: 4),
+          SizedBox(height: AppDimensions.spacingXs),
           Row(
             children: [
               Text(
                 'Due Date: ',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
+                style: AppTextStyles.secondaryText,
               ),
               Text(
                 '${activity['due_date'] ?? 'N/A'}',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black,
-                ),
+                style: AppTextStyles.fieldValue,
               ),
             ],
           ),
-          SizedBox(height: 2),
+          SizedBox(height: AppDimensions.spacingXxs),
           Row(
             children: [
               Text(
                 'Status: ',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
+                style: AppTextStyles.secondaryText,
               ),
               Text(
                 '${activity['status'] ?? 'N/A'}',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black,
-                ),
+                style: AppTextStyles.fieldValue,
               ),
             ],
           ),
         ],
       ),
       trailing: Container(
-        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: _getStatusColor(activity['status']),
-          borderRadius: BorderRadius.circular(20),
-        ),
+        padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingM, vertical: AppDimensions.spacingXs),
+        decoration: AppDecorations.getStatusBadgeDecoration(_getStatusColor(activity['status'])),
         child: Text(
           activity['status'] ?? '',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
+          style: AppTextStyles.statusBadge,
         ),
       ),
       onTap: () {

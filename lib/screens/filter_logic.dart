@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import '../providers/data_provider.dart';
 
 /// Class to represent column information

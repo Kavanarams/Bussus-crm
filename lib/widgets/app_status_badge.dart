@@ -7,10 +7,10 @@ class AppStatusBadge extends StatelessWidget {
   final Color color;
   
   const AppStatusBadge({
-    Key? key,
+    super.key,
     required this.status,
     required this.color,
-  }) : super(key: key);
+  });
   
   @override
   Widget build(BuildContext context) {

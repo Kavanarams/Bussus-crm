@@ -8,11 +8,11 @@ class AppInfoItem extends StatelessWidget {
   final bool isRequired;
   
   const AppInfoItem({
-    Key? key,
+    super.key,
     required this.label,
     required this.value,
     this.isRequired = false,
-  }) : super(key: key);
+  });
   
   @override
   Widget build(BuildContext context) {

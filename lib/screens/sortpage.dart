@@ -9,7 +9,7 @@ import '../theme/app_text_styles.dart';
 class SortPage extends StatefulWidget {
   final String type;
 
-  SortPage({required this.type});
+  const SortPage({super.key, required this.type});
 
   @override
   _SortPageState createState() => _SortPageState();
@@ -18,7 +18,7 @@ class SortPage extends StatefulWidget {
 class _SortPageState extends State<SortPage> {
   String? _tempSortColumn;
   bool _tempSortAscending = true;
-  Map<String, String> _columnLabels = {};
+  final Map<String, String> _columnLabels = {};
 
   @override
   void initState() {

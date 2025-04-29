@@ -13,7 +13,7 @@ import 'package:http/http.dart' as http;
 class NewItemScreen extends StatefulWidget {
   final String type;
 
-  NewItemScreen({required this.type});
+  const NewItemScreen({super.key, required this.type});
 
   @override
   _NewItemScreenState createState() => _NewItemScreenState();
@@ -23,18 +23,18 @@ class _NewItemScreenState extends State<NewItemScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   String? _error;
-  Map<String, TextEditingController> _controllers = {};
+  final Map<String, TextEditingController> _controllers = {};
   List<ColumnInfo> _allFields = [];
   List<FormSection> _formSections = [];
   bool _isInitializing = true;
-  Map<String, String> _dropdownValues = {};
-  Map<String, List<Map<String, String>>> _lookupData = {};
-  Map<String, List<String>> _dropdownOptionsCache = {};
+  final Map<String, String> _dropdownValues = {};
+  final Map<String, List<Map<String, String>>> _lookupData = {};
+  final Map<String, List<String>> _dropdownOptionsCache = {};
   
   // Define the fields that need lookup data
   final List<String> _lookupFields = ['lead'];
   
-  Map<String, Map<String, String>> _dropdownMappings = {
+  final Map<String, Map<String, String>> _dropdownMappings = {
     'customer_type': {
       'Engineer': 'EN',
       'Consumer': 'CO',
@@ -86,7 +86,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
       print("🔍 Lookup data fetched");
       
       // Initialize controllers for all fields
-      _allFields.forEach((field) {
+      for (var field in _allFields) {
         _controllers[field.name] = TextEditingController();
         
         // Pre-populate dropdown options cache
@@ -94,7 +94,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
           _dropdownOptionsCache[field.name] = _parseDropdownValues(field);
           print("🔽 Dropdown options for ${field.name}: ${_dropdownOptionsCache[field.name]}");
         }
-      });
+      }
       
       // Only use default layout if we got empty data from both API calls
       if (_allFields.isEmpty && _formSections.isEmpty) {
@@ -128,8 +128,9 @@ class _NewItemScreenState extends State<NewItemScreen> {
           
           // Guess datatype
           String datatype = 'text';
-          if (fieldName.contains('email')) datatype = 'email';
-          else if (fieldName.contains('phone')) datatype = 'phone';
+          if (fieldName.contains('email')) {
+            datatype = 'email';
+          } else if (fieldName.contains('phone')) datatype = 'phone';
           
           _allFields.add(ColumnInfo(
             name: fieldName,
@@ -185,18 +186,18 @@ class _NewItemScreenState extends State<NewItemScreen> {
         _allFields = columns;
         
         // Initialize controllers for all fields
-        _allFields.forEach((field) {
+        for (var field in _allFields) {
           _controllers[field.name] = TextEditingController();
           
           // Pre-populate dropdown options cache
           if (_hasDropdownValues(field)) {
             _dropdownOptionsCache[field.name] = _parseDropdownValues(field);
           }
-        });
+        }
       });
     } catch (e) {
       print("Error in _setupFields: $e");
-      throw e;
+      rethrow;
     }
   }
   
@@ -255,7 +256,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
       });
     } catch (e) {
       print("Error in _fetchFormLayout: $e");
-      throw e;
+      rethrow;
     }
   }
   
@@ -281,7 +282,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
     print("Default fields created: ${_allFields.length}");
 
     // Initialize controllers for all fields
-    _allFields.forEach((field) {
+    for (var field in _allFields) {
       _controllers[field.name] = _controllers[field.name] ?? TextEditingController();
       
       // Pre-populate dropdown options cache
@@ -289,7 +290,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
         _dropdownOptionsCache[field.name] = _parseDropdownValues(field);
         print("Dropdown options for ${field.name}: ${_dropdownOptionsCache[field.name]}");
       }
-    });
+    }
 
     // Create form sections
     _formSections = [
@@ -639,7 +640,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
           // Fix: providing a default empty string if option['name'] is null
           child: Text(option['name'] ?? '', overflow: TextOverflow.ellipsis),
         )
-      ).toList(),
+      ),
     ],
     validator: isRequired ? (value) {
       if (value == null || value.isEmpty) {
@@ -811,7 +812,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
             value: option,
             child: Text(option, overflow: TextOverflow.ellipsis),
           )
-        ).toList(),
+        ),
       ],
       validator: isRequired ? (value) {
         if (value == null || value.isEmpty) {
@@ -912,6 +913,6 @@ class _NewItemScreenState extends State<NewItemScreen> {
 
 extension StringExtension on String {
   String capitalize() {
-    return "${this[0].toUpperCase()}${this.substring(1)}";
+    return "${this[0].toUpperCase()}${substring(1)}";
   }
 }                                   

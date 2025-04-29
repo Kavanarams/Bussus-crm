@@ -14,9 +14,9 @@ class FilterPage extends StatefulWidget {
   final String type;
 
   const FilterPage({
-    Key? key,
+    super.key,
     required this.type,
-  }) : super(key: key);
+  });
 
   @override
   _FilterPageState createState() => _FilterPageState();
@@ -29,7 +29,7 @@ class _FilterPageState extends State<FilterPage> {
   // Track a temporary filter condition for the dialog
   filter_logic.FilterCondition? _tempFilterCondition;
   // Text controller for the dialog
-  TextEditingController _dialogValueController = TextEditingController();
+  final TextEditingController _dialogValueController = TextEditingController();
 
   @override
   void initState() {

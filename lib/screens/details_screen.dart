@@ -33,11 +33,11 @@ class _DetailsScreenState extends State<DetailsScreen> {
   String? _error;
   List<Map<String, dynamic>> _layoutSections = [];
   List<Map<String, dynamic>> _activities = [];
-  bool _isLoadingActivities = false;
+  final bool _isLoadingActivities = false;
   bool _activitiesSectionExpanded = false;
   
   // Map to keep track of expanded sections - the key is the section title
-  Map<String, bool> _expandedSections = {};
+  final Map<String, bool> _expandedSections = {};
 
   @override
   void initState() {
@@ -349,13 +349,13 @@ class _DetailsScreenState extends State<DetailsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel'),
             style: AppButtonStyles.dialogCancelButton,
+            child: Text('Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete'),
             style: AppButtonStyles.dialogConfirmButton,
+            child: Text('Delete'),
           ),
         ],
       ),
@@ -440,7 +440,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                         const Divider(),
                       ],
                     );
-                  }).toList(),
+                  }),
                 ],
               ),
             ),
@@ -506,7 +506,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                         const Divider(),
                       ],
                     );
-                  }).toList(),
+                  }),
                 ],
               ),
             ),
@@ -646,31 +646,37 @@ class _DetailsScreenState extends State<DetailsScreen> {
                           // Add "View More" button if there are more than 2 activities
                           if (hasMoreTasks) ...[
                             Divider(height: 1),
-                            InkWell(
-                              onTap: () {
-                                // Navigate to the all activities screen
-                                Navigator.push(
-                                  context, 
-                                  MaterialPageRoute(
-                                    builder: (context) => AllActivitiesScreen(
-                                      activities: _activities, 
-                                      objectType: widget.type,
-                                      objectName: _details['name'] ?? 'Unknown',
+                            // In the View All activities button
+                              InkWell(
+                                onTap: () async {
+                                  // Navigate to the all activities screen
+                                  final result = await Navigator.push(
+                                    context, 
+                                    MaterialPageRoute(
+                                      builder: (context) => AllActivitiesScreen(
+                                        activities: _activities, 
+                                        objectType: widget.type,
+                                        objectName: _details['name'] ?? 'Unknown',
+                                      ),
+                                    ),
+                                  );
+                                  
+                                  // If result is true, reload details to refresh the activities list
+                                  if (result == true) {
+                                    _loadDetails();
+                                  }
+                                },
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingL),
+                                  child: Center(
+                                    child: Text(
+                                      'View All Activities',
+                                      style: AppTextStyles.actionText,
                                     ),
                                   ),
-                                );
-                              },
-                              child: Container(
-                                width: double.infinity,
-                                padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingL),
-                                child: Center(
-                                  child: Text(
-                                    'View All ${_activities.length} Activities',
-                                    style: AppTextStyles.actionText,
-                                  ),
                                 ),
-                              ),
-                            ),
+                              ),  
                           ],
                         ],
                       ),
@@ -722,6 +728,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
           ),
         ],
       ),
+      
       trailing: Container(
         padding: EdgeInsets.symmetric(
           horizontal: AppDimensions.spacingL, 
@@ -780,6 +787,6 @@ class _DetailsScreenState extends State<DetailsScreen> {
 // Extension to capitalize the first letter of a string
 extension StringExtension on String {
   String capitalize() {
-    return "${this[0].toUpperCase()}${this.substring(1)}";
+    return "${this[0].toUpperCase()}${substring(1)}";
   }
 }

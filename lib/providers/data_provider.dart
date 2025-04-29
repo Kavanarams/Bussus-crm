@@ -200,7 +200,7 @@ String? getColumnLabel(String columnName) {
   try {
     String endpoint = 'https://qa.api.bussus.com/v2/api/listview/$type?limit=1000';
     print('🌐 Fetching data from: $endpoint');
-    print('🔑 Using token: ${token.isNotEmpty ? token.substring(0, 10) + '...' : 'Empty token'}');
+    print('🔑 Using token: ${token.isNotEmpty ? '${token.substring(0, 10)}...' : 'Empty token'}');
     print('🔀 Active sorting: $_sortingActive');
 
     // Check if token exists
@@ -258,7 +258,7 @@ String? getColumnLabel(String columnName) {
       print('📊 Loaded ${_items.length} items');
       print('📊 Visible columns: ${apiResponse.visibleColumns}');
       print('📊 All columns count: ${apiResponse.allColumns.length}');
-      print('📊 ListView ID: ${_currentListViewId}');
+      print('📊 ListView ID: $_currentListViewId');
     } else if (response.statusCode == 401) {
       _error = 'Authentication expired. Please log in again.';
       _items = [];
@@ -322,12 +322,12 @@ String? getColumnLabel(String columnName) {
 
     try {
       if (endpoint.contains('?')) {
-        endpoint = endpoint + '&limit=1000'; // Add high limit
+        endpoint = '$endpoint&limit=1000'; // Add high limit
       } else {
-        endpoint = endpoint + '?limit=1000'; // Add high limit
+        endpoint = '$endpoint?limit=1000'; // Add high limit
       }
       print('🌐 Fetching data from: $endpoint');
-      print('🔑 Using token: ${token.isNotEmpty ? token.substring(0, 10) + '...' : 'Empty token'}');
+      print('🔑 Using token: ${token.isNotEmpty ? '${token.substring(0, 10)}...' : 'Empty token'}');
 
       // Check if token exists
       if (token.isEmpty) {
@@ -369,7 +369,7 @@ String? getColumnLabel(String columnName) {
         print('📊 Loaded ${_items.length} items');
         print('📊 Visible columns: ${apiResponse.visibleColumns}');
         print('📊 All columns count: ${apiResponse.allColumns.length}');
-        print('📊 ListView ID: ${_currentListViewId}');
+        print('📊 ListView ID: $_currentListViewId');
       } else if (response.statusCode == 401) {
         _error = 'Authentication expired. Please log in again.';
         _items = [];
@@ -974,7 +974,7 @@ bool _isDateValue(String value) {
     try {
       // Direct API call to get fresh data
       final response = await http.get(
-        Uri.parse('https://qa.api.bussus.com/v2/api/listview/${_currentListViewId}'),
+        Uri.parse('https://qa.api.bussus.com/v2/api/listview/$_currentListViewId'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -1012,6 +1012,234 @@ bool _isDateValue(String value) {
       return false;
     }
   }
+
+  // Add to data_provider.dart class
+Future<Map<String, dynamic>> fetchTaskDetails(String taskId, String token) async {
+  _isLoading = true;
+  _error = null;
+  _safeNotifyListeners();
+
+  try {
+    // Check if token exists
+    if (token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': _error};
+    }
+
+    // Construct the URL for the task details API
+    final url = 'https://qa.api.bussus.com/v2/api/task?id=$taskId';
+
+    print('🌐 Fetching task details from: $url');
+
+    final response = await http.get(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    print('📤 Response status code: ${response.statusCode}');
+
+    if (response.statusCode == 200) {
+      // Handle the response based on whether it's a List or Map
+      final dynamic responseData = json.decode(response.body);
+      Map<String, dynamic> taskDetails = {};
+      
+      if (responseData is List && responseData.isNotEmpty) {
+        // If the response is directly a List, use the first item
+        taskDetails = Map<String, dynamic>.from(responseData[0]);
+        print('📊 Loaded task details directly from list response: $taskDetails');
+      } else if (responseData is Map) {
+        // If the response is a Map with a 'preview' key that is a List
+        if (responseData.containsKey('preview') && responseData['preview'] is List && responseData['preview'].isNotEmpty) {
+          taskDetails = Map<String, dynamic>.from(responseData['preview'][0]);
+          print('📊 Loaded task details from preview in map response: $taskDetails');
+        } else {
+          // If the response is a Map with direct task details
+          taskDetails = Map<String, dynamic>.from(responseData);
+          print('📊 Loaded task details directly from map response: $taskDetails');
+        }
+      } else {
+        _error = 'Unexpected response format or empty response.';
+        _isLoading = false;
+        _safeNotifyListeners();
+        return {'success': false, 'error': _error};
+      }
+      
+      _isLoading = false;
+      _error = null;
+      _safeNotifyListeners();
+      return {'success': true, 'data': taskDetails};
+    } else if (response.statusCode == 401) {
+      _error = 'Authentication expired. Please log in again.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': _error};
+    } else {
+      _error = 'Failed to load task details. Status code: ${response.statusCode}';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': _error};
+    }
+  } catch (e) {
+    _error = 'Error occurred: $e';
+    print('❌ Error fetching task details: $e');
+    _isLoading = false;
+    _safeNotifyListeners();
+    return {'success': false, 'error': _error.toString()};
+  }
+}
+
+// Add to data_provider.dart class
+Future<Map<String, dynamic>> deleteTask(String taskId, String token) async {
+  _isLoading = true;
+  _error = null;
+  _safeNotifyListeners();
+
+  try {
+    // Check if token exists
+    if (token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': _error};
+    }
+
+    final url = 'https://qa.api.bussus.com/v2/api/task';
+    
+    print('🌐 Sending DELETE request to $url with task ID: $taskId');
+    
+    final response = await http.delete(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({
+        "ids": [taskId]
+      }),
+    );
+
+    print('📤 Delete response status: ${response.statusCode}');
+    print('📤 Delete response body: ${response.body}');
+
+    if (response.statusCode == 200) {
+      _isLoading = false;
+      _error = null;
+      _safeNotifyListeners();
+      return {'success': true};
+    } else {
+      String errorMessage;
+      try {
+        final responseData = json.decode(response.body);
+        errorMessage = responseData['message'] ?? 'Failed to delete task';
+      } catch (e) {
+        errorMessage = 'Failed to delete task. Status code: ${response.statusCode}';
+      }
+
+      _error = errorMessage;
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': errorMessage};
+    }
+  } catch (e) {
+    _error = 'Error occurred: $e';
+    print('❌ Error deleting task: $e');
+    _isLoading = false;
+    _safeNotifyListeners();
+    return {'success': false, 'error': _error.toString()};
+  }
+}
+
+Future<Map<String, dynamic>> updateTask(String taskId, Map<String, dynamic> taskData, String token) async {
+  _isLoading = true;
+  _error = null;
+  _safeNotifyListeners();
+  try {
+    if (token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': _error};
+    }
+    final url = 'https://qa.api.bussus.com/v2/api/task';
+    
+    print('🌐 Sending PATCH request to $url with task ID: $taskId');
+    print('📝 Task data: $taskData');
+    
+    final response = await http.patch(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({
+        'id': taskId,
+        'data': taskData
+      }),
+    );
+    
+    print('📤 Update response status: ${response.statusCode}');
+    print('📤 Update response body: ${response.body}');
+    
+    if (response.statusCode == 200) {
+      final responseData = json.decode(response.body);
+      
+      // Check if the response indicates success and has updated records
+      if (responseData['success'] == true && 
+          responseData['updated_records'] != null && 
+          responseData['updated_records'].isNotEmpty) {
+        
+        // Refresh your task list or task data here
+        await refreshTaskList(); // You'll need to implement this method
+        
+        _isLoading = false;
+        _error = null;
+        _safeNotifyListeners();
+        return {'success': true, 'data': responseData['updated_records'][0]};
+      } else {
+        // The API returned 200 but no actual updates happened
+        _error = 'Update was not applied. Please check your data.';
+        _isLoading = false;
+        _safeNotifyListeners();
+        return {'success': false, 'error': _error};
+      }
+    } else {
+      String errorMessage;
+      try {
+        final responseData = json.decode(response.body);
+        errorMessage = responseData['message'] ?? 'Failed to update task';
+      } catch (e) {
+        errorMessage = 'Failed to update task. Status code: ${response.statusCode}';
+      }
+      _error = errorMessage;
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': errorMessage};
+    }
+  } catch (e) {
+    _error = 'Error occurred: $e';
+    print('❌ Error updating task: $e');
+    _isLoading = false;
+    _safeNotifyListeners();
+    return {'success': false, 'error': _error.toString()};
+  }
+}
+
+Future<void> refreshTaskList() async {
+  // Implement logic to fetch the latest task list from the server
+  // This might mean calling your existing fetchTasks() method or similar
+  try {
+    // Example: await fetchTasks(currentUserToken);
+    // You'll need to implement according to your app structure
+    print('🔄 Refreshing task list after update');
+  } catch (e) {
+    print('❌ Error refreshing tasks: $e');
+  }
+}
 
   // Add this method to your DataProvider class
 Future<Map<String, dynamic>> getFormPreview(String type, String token) async {
@@ -1143,8 +1371,9 @@ Future<List<ColumnInfo>> getColumns(String type) async {
           
           // Guess datatype based on field name
           String datatype = 'text';
-          if (fieldName.contains('email')) datatype = 'email';
-          else if (fieldName.contains('phone')) datatype = 'phone';
+          if (fieldName.contains('email')) {
+            datatype = 'email';
+          } else if (fieldName.contains('phone')) datatype = 'phone';
           else if (fieldName.contains('date')) datatype = 'date';
           else if (fieldName.contains('price') || fieldName.contains('amount')) datatype = 'number';
           
@@ -1448,6 +1677,145 @@ Future<bool> deleteItem(String type, String itemId) async {
       _safeNotifyListeners();
     }
   }
+
+  // Add these methods to your DataProvider class
+
+/// Fetch user information by name
+Future<Map<String, dynamic>?> getUserByName(String name, String token) async {
+  _isLoading = true;
+  _safeNotifyListeners();
+
+  try {
+    print('🔍 Looking up user by name: $name');
+
+    if (token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return null;
+    }
+
+    // Endpoint to get user by name
+    final endpoint = 'https://qa.api.bussus.com/v2/api/users/search?name=$name';
+
+    final response = await http.get(
+      Uri.parse(endpoint),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    print('📤 Get user response status code: ${response.statusCode}');
+    print('📤 Get user response body: ${response.body}');
+
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> responseData = json.decode(response.body);
+      // Check if any users were found
+      if (responseData['data'] != null && responseData['data'].isNotEmpty) {
+        // Return the first user that matches the name
+        return responseData['data'][0];
+      } else {
+        print('⚠️ No users found with name: $name');
+        return null;
+      }
+    } else {
+      Map<String, dynamic> responseData = {};
+      try {
+        responseData = json.decode(response.body);
+      } catch (e) {
+        print('❌ Failed to parse error response: $e');
+      }
+
+      String errorMsg = responseData['message'] ?? 'Failed to find user. Status code: ${response.statusCode}';
+      _error = errorMsg;
+      _safeNotifyListeners();
+      return null;
+    }
+  } catch (e) {
+    String errorMsg = 'Error looking up user: $e';
+    _error = errorMsg;
+    print('❌ Error getting user: $e');
+    _safeNotifyListeners();
+    return null;
+  } finally {
+    _isLoading = false;
+    _safeNotifyListeners();
+  }
+}
+
+/// Get the owner ID of a related object
+Future<int?> getRelatedObjectOwnerId(String objectId, String objectType, String token) async {
+  _isLoading = true;
+  _safeNotifyListeners();
+
+  try {
+    print('🔍 Getting owner ID for $objectType with ID: $objectId');
+
+    if (token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return null;
+    }
+
+    // Endpoint to get object details
+    final endpoint = 'https://qa.api.bussus.com/v2/api/$objectType/$objectId';
+
+    final response = await http.get(
+      Uri.parse(endpoint),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    print('📤 Get object response status code: ${response.statusCode}');
+    print('📤 Get object response body: ${response.body}');
+
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> responseData = json.decode(response.body);
+      // Look for owner_id or user_id in the response
+      if (responseData['data'] != null) {
+        var data = responseData['data'];
+        // Try to find owner ID in various possible field names
+        int? ownerId = data['owner_id'] ?? data['user_id'] ?? data['created_by'];
+        
+        if (ownerId == null) {
+          print('⚠️ No owner ID found for $objectType with ID: $objectId');
+        } else {
+          print('✅ Found owner ID: $ownerId');
+        }
+        
+        return ownerId;
+      } else {
+        print('⚠️ No data field in response for $objectType with ID: $objectId');
+        return null;
+      }
+    } else {
+      Map<String, dynamic> responseData = {};
+      try {
+        responseData = json.decode(response.body);
+      } catch (e) {
+        print('❌ Failed to parse error response: $e');
+      }
+
+      String errorMsg = responseData['message'] ?? 'Failed to get object details. Status code: ${response.statusCode}';
+      _error = errorMsg;
+      _safeNotifyListeners();
+      return null;
+    }
+  } catch (e) {
+    String errorMsg = 'Error getting object details: $e';
+    _error = errorMsg;
+    print('❌ Error getting object details: $e');
+    _safeNotifyListeners();
+    return null;
+  } finally {
+    _isLoading = false;
+    _safeNotifyListeners();
+  }
+}
   // Add this to your DataProvider class
 
   Future<void> searchData(String type, String query, String token) async {

@@ -32,7 +32,7 @@ class WidgetFactory {
 class ChartWidget extends StatelessWidget {
   final DashboardItem item;
 
-  const ChartWidget({Key? key, required this.item}) : super(key: key);
+  const ChartWidget({super.key, required this.item});
 
   @override
   Widget build(BuildContext context) {
