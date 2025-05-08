@@ -8,6 +8,7 @@ import '../theme/app_dimensions.dart';
 import '../theme/app_text_styles.dart';
 import '../theme/app_button_styles.dart';
 import 'filter_logic.dart' as filter_logic;
+import '../theme/app_snackbar.dart';
 
 /// A full screen filter page with improved UI using dialog for adding filters
 class FilterPage extends StatefulWidget {
@@ -113,12 +114,7 @@ class _FilterPageState extends State<FilterPage> {
       
       Navigator.of(context).pop(true);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error applying filters: ${e.toString()}'),
-          backgroundColor: AppColors.error,
-        )
-      );
+      AppSnackBar.showError(context, 'Error applying filters: ${e.toString()}');
       
       setState(() {
         _isLoading = false;
@@ -154,12 +150,7 @@ class _FilterPageState extends State<FilterPage> {
       }
       
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error clearing filters: ${e.toString()}'),
-          backgroundColor: AppColors.error,
-        )
-      );
+      AppSnackBar.showError(context, 'Error clearing filters: ${e.toString()}');
       
       setState(() {
         _isLoading = false;

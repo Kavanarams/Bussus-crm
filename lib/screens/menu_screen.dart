@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'list_screen.dart';
 import 'home_screen.dart';
 import 'package:provider/provider.dart';
-import 'package:materio/providers/data_provider.dart';
+import '../providers/data_provider.dart';
 
 class MenuScreen extends StatelessWidget {
   const MenuScreen({super.key});

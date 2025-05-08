@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../providers/data_provider.dart'; // Make sure to import the data provider
+import '../providers/data_provider.dart'; 
 import '../theme/app_colors.dart';
 import '../theme/app_dimensions.dart';
 import '../theme/app_text_styles.dart';
 import '../theme/app_button_styles.dart';
+import '../theme/app_snackbar.dart';
 
 class TaskEditScreen extends StatefulWidget {
   final String taskId;
@@ -24,17 +25,20 @@ class TaskEditScreen extends StatefulWidget {
 class _TaskEditScreenState extends State<TaskEditScreen> {
   final bool _isLoading = false;
   bool _isSaving = false;
+  bool _isLoadingUsers = true;
   String? _error;
+  List<Map<String, dynamic>> _users = [];
   
   // Controllers for editing fields
   final TextEditingController subjectController = TextEditingController();
   final TextEditingController dueDateController = TextEditingController();
-  final TextEditingController assignedToController = TextEditingController();
   final TextEditingController relatedToController = TextEditingController();
   final TextEditingController descriptionController = TextEditingController();
   
   String selectedStatus = 'Not Started';
   DateTime? selectedDate;
+  String? selectedUserId;
+  String? selectedUserName;
   
   // Error state variables
   Map<String, bool> fieldErrors = {
@@ -47,6 +51,7 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
   void initState() {
     super.initState();
     _initializeControllers();
+    _fetchUsers();
   }
   
   @override
@@ -54,17 +59,143 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
     // Dispose all controllers
     subjectController.dispose();
     dueDateController.dispose();
-    assignedToController.dispose();
     relatedToController.dispose();
     descriptionController.dispose();
     super.dispose();
+  }
+  
+  Future<void> _fetchUsers() async {
+    setState(() {
+      _isLoadingUsers = true;
+    });
+    
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final dataProvider = Provider.of<DataProvider>(context, listen: false);
+      final token = authProvider.token;
+      
+      if (token.isEmpty) {
+        setState(() {
+          _isLoadingUsers = false;
+          _error = 'Authentication required to fetch users. Please log in.';
+        });
+        return;
+      }
+      
+      // Get users from your data provider
+      final result = await dataProvider.getUsers(token);
+      
+      if (result['success']) {
+        setState(() {
+          _users = List<Map<String, dynamic>>.from(result['data']);
+          _isLoadingUsers = false;
+          
+          // Try to find the assigned user in different ways
+          _setSelectedUserFromTaskDetails();
+        });
+      } else {
+        setState(() {
+          _isLoadingUsers = false;
+          _error = 'Failed to load users: ${result['error']}';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoadingUsers = false;
+        _error = 'Error loading users: $e';
+      });
+    }
+  }
+  
+  void _setSelectedUserFromTaskDetails() {
+    // Check different ways the assigned user might be stored
+    if (_users.isEmpty) return;
+    
+    // Try to match by various possible identifiers
+    int? userId;
+    String? userEmail;
+    String? userName;
+    
+    // Look for assigned_to_id first (most reliable)
+    if (widget.taskDetails.containsKey('assigned_to_id') && 
+        widget.taskDetails['assigned_to_id'] != null) {
+      userId = widget.taskDetails['assigned_to_id'] is String 
+          ? int.tryParse(widget.taskDetails['assigned_to_id'])
+          : widget.taskDetails['assigned_to_id'];
+    }
+    
+    // Look for email in assigned_to field
+    if (widget.taskDetails.containsKey('assigned_to') && 
+        widget.taskDetails['assigned_to'] != null &&
+        widget.taskDetails['assigned_to'].toString().contains('@')) {
+      userEmail = widget.taskDetails['assigned_to'];
+    }
+    
+    // Look for name in assigned_to or assigned_to_name
+    if (widget.taskDetails.containsKey('assigned_to_name') && 
+        widget.taskDetails['assigned_to_name'] != null) {
+      userName = widget.taskDetails['assigned_to_name'];
+    } else if (widget.taskDetails.containsKey('assigned_to') && 
+        widget.taskDetails['assigned_to'] != null &&
+        !widget.taskDetails['assigned_to'].toString().contains('@')) {
+      userName = widget.taskDetails['assigned_to'];
+    }
+    
+    // Try to find matching user by ID first (most precise)
+    if (userId != null) {
+      final userMatch = _users.firstWhere(
+        (user) => user['id'] == userId || user['id'].toString() == userId.toString(),
+        orElse: () => {},
+      );
+      
+      if (userMatch.isNotEmpty) {
+        selectedUserId = userMatch['id'].toString();
+        selectedUserName = userMatch['name'];
+        return;
+      }
+    }
+    
+    // Try by email next
+    if (userEmail != null) {
+      final userMatch = _users.firstWhere(
+        (user) => user['email'] == userEmail,
+        orElse: () => {},
+      );
+      
+      if (userMatch.isNotEmpty) {
+        selectedUserId = userMatch['id'].toString();
+        selectedUserName = userMatch['name'];
+        return;
+      }
+    }
+    
+    // Finally try by name
+    if (userName != null) {
+      final userMatch = _users.firstWhere(
+        (user) => user['name'] == userName,
+        orElse: () => {},
+      );
+      
+      if (userMatch.isNotEmpty) {
+        selectedUserId = userMatch['id'].toString();
+        selectedUserName = userMatch['name'];
+        return;
+      }
+    }
+    
+    // Debug print all the possibilities we tried
+    print('⚠️ Could not find matching user for task:');
+    print('🆔 Attempted ID: $userId');
+    print('📧 Attempted Email: $userEmail');
+    print('👤 Attempted Name: $userName');
+    print('📋 Available Users: ${_users.map((u) => "${u['id']}: ${u['name']} (${u['email']})").join(', ')}');
+    print('🔍 Task Details: ${widget.taskDetails}');
   }
   
   void _initializeControllers() {
     // Initialize text controllers with values from taskDetails
     subjectController.text = widget.taskDetails['subject'] ?? '';
     dueDateController.text = widget.taskDetails['due_date'] ?? '';
-    assignedToController.text = widget.taskDetails['assigned_to'] ?? '';
     relatedToController.text = widget.taskDetails['related_to'] ?? '';
     descriptionController.text = widget.taskDetails['description'] ?? '';
     
@@ -136,80 +267,109 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
     );
   }
 
-  Future<void> _saveTask() async {
-    setState(() {
-      fieldErrors = {
-        'subject': subjectController.text.isEmpty,
-        'dueDate': dueDateController.text.isEmpty,
-        'assignedTo': assignedToController.text.isEmpty,
-      };
-    });
+  // Add this method to _TaskEditScreenState class to debug and ensure we have the right related_to_id
+void _debugOriginalTaskDetails() {
+  print('👉 ORIGINAL TASK DETAILS:');
+  print('📎 related_to_id: ${widget.taskDetails['related_to_id']}');
+  print('📎 related_to: ${widget.taskDetails['related_to']}');
+  print('📎 All fields: ${widget.taskDetails}');
+}
 
-    if (fieldErrors.values.contains(true)) {
-      showTopSnackBar(
-        message: 'Please fill in all required fields',
-        backgroundColor: AppColors.error,
-      );
+// Replace the _saveTask method with this implementation
+// Replace the _saveTask method with this implementation
+Future<void> _saveTask() async {
+  // Debug the original task data first
+  _debugOriginalTaskDetails();
+
+  // Check for required fields
+  setState(() {
+    fieldErrors = {
+      'subject': subjectController.text.isEmpty,
+      'dueDate': dueDateController.text.isEmpty,
+      'assignedTo': selectedUserId == null,
+    };
+  });
+
+  if (fieldErrors.values.contains(true)) {
+    AppSnackBar.showError(context, 'Fill all the required field');
+    return;
+  }
+
+  setState(() {
+    _isSaving = true;
+  });
+
+  try {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final dataProvider = Provider.of<DataProvider>(context, listen: false);
+    final token = authProvider.token;
+
+    if (token.isEmpty) {
+      AppSnackBar.showError(context, 'Authentication required..please login');
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
+    // Find the selected user to get their email
+    final selectedUser = _users.firstWhere(
+      (user) => user['id'].toString() == selectedUserId,
+      orElse: () => {},
+    );
+    
+    final String assignedToName = selectedUser.isNotEmpty ? selectedUser['name'] : '';
 
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final dataProvider = Provider.of<DataProvider>(context, listen: false);
-      final token = authProvider.token;
-
-      if (token.isEmpty) {
-        showTopSnackBar(
-          message: 'Authentication required. Please log in.',
-          backgroundColor: AppColors.error,
-        );
-        return;
-      }
-
-      final taskData = {
-        'subject': subjectController.text,
-        'due_date': dueDateController.text,
-        'assigned_to': assignedToController.text,
-        'status': selectedStatus,
-        'related_to': relatedToController.text,
-      };
-      
-      if (widget.taskDetails.containsKey('description')) {
-        taskData['description'] = descriptionController.text;
-      }
-
-      // Use dataProvider to update the task
-      final result = await dataProvider.updateTask(widget.taskId, taskData, token);
-
-      if (result['success']) {
-        showTopSnackBar(
-          message: 'Task updated successfully',
-          backgroundColor: AppColors.success,
-        );
-        Navigator.pop(context, true);
-      } else {
-        String errorMessage = result['error'] ?? 'Failed to update task';
-        showTopSnackBar(
-          message: errorMessage,
-          backgroundColor: AppColors.error,
-        );
-      }
-    } catch (e) {
-      showTopSnackBar(
-        message: 'Error updating task: $e',
-        backgroundColor: AppColors.error,
-      );
-    } finally {
-      setState(() {
-        _isSaving = false;
-      });
+    // Create task data with only the fields we want to update
+    // CRITICAL FIX: Only send fields we're explicitly changing
+    final taskData = {
+      'id': widget.taskId, // Include the task ID
+      'subject': subjectController.text,
+      'due_date': dueDateController.text,
+      'assigned_to': assignedToName,
+      'user_id': int.tryParse(selectedUserId ?? '') ?? 0,
+      'status': selectedStatus,
+    };
+    
+    // CRITICAL FIX: Only include these fields if they exist in the original task
+    // AND we're not trying to change them
+    if (widget.taskDetails['related_to_id'] != null) {
+      taskData['related_to_id'] = widget.taskDetails['related_to_id'];
     }
-  }
+    
+    if (widget.taskDetails['related_to'] != null) {
+      taskData['related_to'] = widget.taskDetails['related_to'];
+    }
+    
+    // Only update description if it was originally present
+    if (widget.taskDetails.containsKey('description')) {
+      taskData['description'] = descriptionController.text;
+    }
 
+    // Debug the task data we're about to send
+    print('🔄 Task Update Data:');
+    print('🆔 Task ID: ${widget.taskId}');
+    print('👤 Selected User ID: $selectedUserId');
+    print('📝 User Name: $assignedToName');
+    print('📎 related_to_id: ${taskData['related_to_id']}');
+    print('📎 related_to: ${taskData['related_to']}');
+    print('🔄 Full Data: $taskData');
+
+    // Use dataProvider to update the task
+    final result = await dataProvider.updateTask(widget.taskId, taskData, token);
+
+    if (result['success']) {
+      AppSnackBar.showSuccess(context, 'Task updated successfully');
+      Navigator.pop(context, true);
+    } else {
+      String errorMessage = result['error'] ?? 'Failed to update task';
+      AppSnackBar.showError(context, errorMessage);
+    }
+  } catch (e) {
+    AppSnackBar.showError(context, 'error updating task');
+  } finally {
+    setState(() {
+      _isSaving = false;
+    });
+  }
+}
   Widget buildFormField({
     required String label,
     required bool isRequired,
@@ -350,25 +510,84 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
                                     ),
                                   ),
                                   
-                                  // Assigned To field
+                                  // Assigned To dropdown field
                                   buildFormField(
                                     label: 'Assigned To',
                                     isRequired: true,
                                     isError: fieldErrors['assignedTo'] ?? false,
-                                    child: TextFormField(
-                                      controller: assignedToController,
-                                      decoration: InputDecoration(
-                                        contentPadding: EdgeInsets.symmetric(
-                                          horizontal: AppDimensions.spacingL,
-                                          vertical: AppDimensions.spacingM,
+                                    child: _isLoadingUsers
+                                      ? Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: AppDimensions.spacingL,
+                                            vertical: AppDimensions.spacingM,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                ),
+                                              ),
+                                              SizedBox(width: AppDimensions.spacingM),
+                                              Text('Loading users...'),
+                                            ],
+                                          ),
+                                        )
+                                      : Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: AppDimensions.spacingL,
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              DropdownButtonHideUnderline(
+                                                child: DropdownButton<String>(
+                                                  value: selectedUserId,
+                                                  isExpanded: true,
+                                                  hint: Text('Select User'),
+                                                  style: AppTextStyles.bodyMedium,
+                                                  items: _users.map((user) {
+                                                    return DropdownMenuItem<String>(
+                                                      value: user['id'].toString(),
+                                                      child: Text(user['name'] != null && user['name'].isNotEmpty
+                                                        ? user['name']
+                                                        : (user['email'] ?? 'Unknown User')),
+                                                    );
+                                                  }).toList(),
+                                                  onChanged: (String? newValue) {
+                                                    if (newValue != null) {
+                                                      setState(() {
+                                                        selectedUserId = newValue;
+                                                        // Find the user and update the name
+                                                        final selectedUser = _users.firstWhere(
+                                                          (user) => user['id'].toString() == newValue,
+                                                          orElse: () => {},
+                                                        );
+                                                        if (selectedUser.isNotEmpty) {
+                                                          selectedUserName = selectedUser['name'];
+                                                        }
+                                                        fieldErrors['assignedTo'] = false;
+                                                      });
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                              if (selectedUserId != null)
+                                                Padding(
+                                                  padding: EdgeInsets.only(top: 4),
+                                                  child: Text(
+                                                    'Selected: ${selectedUserName ?? 'Unknown User'}',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: AppColors.textSecondary,
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
                                         ),
-                                        border: InputBorder.none,
-                                        focusedBorder: InputBorder.none,
-                                        enabledBorder: InputBorder.none,
-                                        errorBorder: InputBorder.none,
-                                        disabledBorder: InputBorder.none,
-                                      ),
-                                    ),
                                   ),
                                   
                                   // Status dropdown
@@ -412,23 +631,31 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
                                   
                                   // Related To field
                                   buildFormField(
-                                    label: 'Related To',
-                                    isRequired: false,
-                                    child: TextFormField(
-                                      controller: relatedToController,
-                                      decoration: InputDecoration(
-                                        contentPadding: EdgeInsets.symmetric(
-                                          horizontal: AppDimensions.spacingL,
-                                          vertical: AppDimensions.spacingM,
-                                        ),
-                                        border: InputBorder.none,
-                                        focusedBorder: InputBorder.none,
-                                        enabledBorder: InputBorder.none,
-                                        errorBorder: InputBorder.none, 
-                                        disabledBorder: InputBorder.none,
-                                      ),
-                                    ),
-                                  ),
+  label: 'Related To',
+  isRequired: false,
+  child: TextFormField(
+    controller: relatedToController,
+    readOnly: widget.taskDetails['related_to_id'] != null, // Make read-only if it has a parent
+    decoration: InputDecoration(
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: AppDimensions.spacingL,
+        vertical: AppDimensions.spacingM,
+      ),
+      border: InputBorder.none,
+      focusedBorder: InputBorder.none,
+      enabledBorder: InputBorder.none,
+      errorBorder: InputBorder.none, 
+      disabledBorder: InputBorder.none,
+      // Add a tooltip icon if it's related to a parent
+      suffixIcon: widget.taskDetails['related_to_id'] != null 
+        ? Tooltip(
+            message: 'This task is linked to a ${_getRelatedToType()} record',
+            child: Icon(Icons.info_outline, color: AppColors.primary),
+          )
+        : null,
+    ),
+  ),
+),
                                   
                                   // Description field (if available in original task)
                                   if (widget.taskDetails.containsKey('description'))
@@ -493,4 +720,20 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
                 ),
     );
   }
+  String _getRelatedToType() {
+  // Check if we can determine the type from the related_to_id format
+  // This is just an example - modify according to your actual ID format
+  final relatedToId = widget.taskDetails['related_to_id']?.toString() ?? '';
+  if (relatedToId.startsWith('le')) {
+    return 'Lead';
+  } else if (relatedToId.startsWith('co')) {
+    return 'Contact';
+  } else if (relatedToId.startsWith('ac')) {
+    return 'Account';
+  } else if (relatedToId.startsWith('op')) {
+    return 'Opportunity';
+  } else {
+    return 'Parent';
+  }
+}
 }

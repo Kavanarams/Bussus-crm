@@ -8,6 +8,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_dimensions.dart';
 import '../theme/app_text_styles.dart';
 import '../theme/app_button_styles.dart';
+import '../theme/app_snackbar.dart';
 
 class EditItemScreen extends StatefulWidget {
   final String type;
@@ -233,12 +234,7 @@ class _EditItemScreenState extends State<EditItemScreen> {
 
       if (result['success']) {
         // Show success snackbar
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Changes saved successfully'),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        AppSnackBar.showSuccess(context, 'Changes saved successfully');
         
         // Navigate to the details screen
         Navigator.pushReplacement(
@@ -256,12 +252,7 @@ class _EditItemScreenState extends State<EditItemScreen> {
         });
         
         // Show error snackbar
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_error ?? 'Failed to save changes'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        AppSnackBar.showError(context, _error ?? 'Failed to save changes');
       }
     } catch (e) {
       setState(() {
@@ -270,12 +261,7 @@ class _EditItemScreenState extends State<EditItemScreen> {
       print('❌ Error updating item: $_error');
       
       // Show error snackbar
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error saving changes: $e'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnackBar.showError(context, 'Error saving changes: $e');
     } finally {
       setState(() {
         _isLoading = false;

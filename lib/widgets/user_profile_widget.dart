@@ -5,10 +5,11 @@ import '../theme/app_text_styles.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_dimensions.dart';
 import '../models/user.dart';
-import '../widgets/password_reset_widget.dart'; // Import the password reset widget
+import '../widgets/password_reset_widget.dart'; 
+import '../theme/app_snackbar.dart';
 
 class UserProfileWidget extends StatelessWidget {
-  const UserProfileWidget({Key? key}) : super(key: key);
+  const UserProfileWidget({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -21,9 +22,7 @@ class UserProfileWidget extends StatelessWidget {
               _showUserProfileMenu(context, authProvider);
             } else {
               // Handle not authenticated state
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Please log in to view profile')),
-              );
+              AppSnackBar.showError(context, 'Please login to view profile');
             }
           },
         );
@@ -51,6 +50,58 @@ class UserProfileWidget extends StatelessWidget {
         return const PasswordResetWidget();
       },
     );
+  }
+
+  // Fixed logout handler that properly handles navigation
+  void _handleLogout(BuildContext context, AuthProvider authProvider) async {
+    // Store a reference to BuildContext before async operation
+    final NavigatorState navigator = Navigator.of(context);
+    
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
+      },
+    );
+
+    try {
+      // Execute logout
+      await authProvider.logout();
+      
+      // Dismiss loading dialog first
+      if (navigator.mounted) {
+        navigator.pop(); // Close loading dialog
+      }
+      
+      // Use a post-frame callback to ensure navigation happens after current build cycle
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Navigate to login screen safely
+        if (navigator.mounted) {
+          navigator.pushNamedAndRemoveUntil(
+            '/login',
+            (route) => false, // Remove all previous routes
+          );
+        }
+      });
+    } catch (e) {
+      // Dismiss loading dialog on error
+      if (navigator.mounted) {
+        navigator.pop(); // Close loading dialog
+      }
+      
+      // Show error in a safe way
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (navigator.mounted && context.mounted) {
+          AppSnackBar.showError(context, 'Logout failed: ${e.toString()}');
+        }
+      });
+      
+      debugPrint('Logout error: ${e.toString()}');
+    }
   }
 
   Widget _buildUserProfileSheet(BuildContext context, AuthProvider authProvider) {
@@ -120,16 +171,10 @@ class UserProfileWidget extends StatelessWidget {
             leading: const Icon(Icons.logout, color: AppColors.error),
             title: const Text('Logout'),
             onTap: () {
+              // Close the bottom sheet first
               Navigator.pop(context);
-              authProvider.logout().then((_) {
-                // Navigate to login screen or handle logout as needed
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Logged out successfully')),
-                );
-                
-                // You can add navigation to login screen here if needed
-                Navigator.of(context).pushReplacementNamed('/login');
-              });
+              // Handle logout with proper API call and navigation
+              _handleLogout(context, authProvider);
             },
           ),
         ],

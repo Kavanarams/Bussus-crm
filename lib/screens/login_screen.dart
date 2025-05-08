@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
+import '../theme/app_snackbar.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,11 +23,15 @@ class _LoginScreenState extends State<LoginScreen> {
   final _resetUsernameController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  String _resetEmail = ''; // To store the email for the reset process
   
   // Password validation patterns
   final RegExp _upperCasePattern = RegExp(r'[A-Z]');
   final RegExp _digitPattern = RegExp(r'[0-9]');
   final RegExp _specialCharPattern = RegExp(r'[!@#$%^&*(),.?":{}|<>]');
+
+  // API endpoints
+  final String _baseUrl = 'https://dev.api.bussus.com/v2';
 
   @override
   void initState() {
@@ -45,29 +52,30 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Please enter username and password'))
-      );
+      AppSnackBar.showError(context, 'Please enter your Username and Password');
       return;
     }
 
     setState(() => _isLoading = true);
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final success = await authProvider.login(
-        _usernameController.text,
-        _passwordController.text
-    );
-
-    setState(() => _isLoading = false);
-
-    if (success) {
-      // Navigate to home on successful login
-      Navigator.of(context).pushReplacementNamed('/home');
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Login failed. Please check credentials.'))
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final success = await authProvider.login(
+          _usernameController.text,
+          _passwordController.text
       );
+
+      if (success) {
+        // Navigate to home on successful login
+        Navigator.of(context).pushReplacementNamed('/home');
+      } else {
+        AppSnackBar.showError(context, 'Login failed, please check your credentials');
+      }
+    } catch (e) {
+      print('Login error: $e');
+      AppSnackBar.showError(context, 'An error occurred during login');
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
   
@@ -78,50 +86,52 @@ class _LoginScreenState extends State<LoginScreen> {
       _resetUsernameController.clear();
       _newPasswordController.clear();
       _confirmPasswordController.clear();
+      _resetEmail = '';
     });
   }
   
-  void _validateUsername() {
-    if (_resetUsernameController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Please enter your username'))
-      );
+  void _validateEmailAndContinue() {
+    final email = _resetUsernameController.text.trim();
+    
+    if (email.isEmpty) {
+      AppSnackBar.showError(context, 'Please enter your email address');
       return;
     }
     
-    // Here you would typically verify the username exists in your system
-    // For demo purposes, we'll just proceed to the password reset screen
+    // Basic email validation
+    if (!email.contains('@') || !email.contains('.')) {
+      AppSnackBar.showError(context, 'Please enter a valid email address');
+      return;
+    }
+    
+    // Store the email and move to password reset screen without API call
     setState(() {
+      _resetEmail = email;
       _showNewPasswordFields = true;
     });
+    
+    // Inform the user
+    AppSnackBar.showSuccess(context, 'Please set your new password');
   }
   
   bool _validatePassword(String password) {
     if (password.length < 8) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Password must be at least 8 characters long'))
-      );
+      AppSnackBar.showWarning(context, 'Password must be at least 8 characters long');
       return false;
     }
     
     if (!_upperCasePattern.hasMatch(password)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Password must contain at least one uppercase letter'))
-      );
+      AppSnackBar.showWarning(context, 'Password must contain at least one uppercase letter');
       return false;
     }
     
     if (!_digitPattern.hasMatch(password)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Password must contain at least one number'))
-      );
+      AppSnackBar.showWarning(context, 'Password must contain at least one number');
       return false;
     }
     
     if (!_specialCharPattern.hasMatch(password)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Password must contain at least one special character'))
-      );
+      AppSnackBar.showWarning(context, 'Password must contain at least one special character');
       return false;
     }
     
@@ -129,43 +139,89 @@ class _LoginScreenState extends State<LoginScreen> {
   }
   
   Future<void> _resetPassword() async {
-    final newPassword = _newPasswordController.text;
-    final confirmPassword = _confirmPasswordController.text;
-    
-    if (newPassword != confirmPassword) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Passwords do not match'))
-      );
-      return;
-    }
-    
-    if (!_validatePassword(newPassword)) {
-      return;
-    }
-    
-    setState(() => _isLoading = true);
-    
-    // Here you would typically call your auth provider to reset the password
-    // For demo purposes, we'll just simulate a successful password reset
-    await Future.delayed(Duration(seconds: 1));
-    
-    // In a real app, you would call something like:
-    // final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    // final success = await authProvider.resetPassword(
-    //     _resetUsernameController.text,
-    //     _newPasswordController.text
-    // );
-    
-    setState(() {
-      _isLoading = false;
-      _showForgotPassword = false;
-      _showNewPasswordFields = false;
-    });
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Password reset successfully. Please login with your new password.'))
-    );
+  final newPassword = _newPasswordController.text;
+  final confirmPassword = _confirmPasswordController.text;
+  
+  if (newPassword != confirmPassword) {
+    AppSnackBar.showError(context, 'Passwords do not match');
+    return;
   }
+  
+  if (!_validatePassword(newPassword)) {
+    return;
+  }
+  
+  setState(() => _isLoading = true);
+  
+  try {
+    final requestUrl = '$_baseUrl/forgot_password';
+    final requestBody = {
+      'email': _resetEmail,
+      'new_password': newPassword,
+      'confirm_password': confirmPassword,
+    };
+    
+    print('📤 Sending reset password request to: $requestUrl');
+    print('📦 Request body keys: ${requestBody.keys.toList()}');
+    
+    // Convert to JSON string and print the exact format
+    final jsonBody = jsonEncode(requestBody);
+    print('📦 Request body (JSON): $jsonBody');
+    
+    // Call the API to reset the password - removed authorization header
+    final headers = {
+      'Content-Type': 'application/json',
+      // Removed the 'Authorization' header as it's not required for this endpoint
+    };
+    
+    print('📤 Headers: ${headers.keys.toList()}');
+    
+    // Call the API to reset the password
+    final response = await http.post(
+      Uri.parse(requestUrl),
+      headers: headers,
+      body: jsonEncode(requestBody),
+    ).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () {
+        throw Exception('Request timed out');
+      },
+    );
+    
+    print('📥 Reset response status code: ${response.statusCode}');
+    print('📥 Reset response body: ${response.body}');
+    
+    Map<String, dynamic>? responseData;
+    try {
+      responseData = jsonDecode(response.body);
+    } catch (e) {
+      print('❌ Error parsing reset response: $e');
+    }
+    
+    if (response.statusCode == 200) {
+      // Reset successful
+      setState(() {
+        _showForgotPassword = false;
+        _showNewPasswordFields = false;
+      });
+      
+      // Clear the login form and pre-fill with the email
+      _usernameController.text = _resetEmail;
+      _passwordController.clear();
+      
+      AppSnackBar.showSuccess(context, 'Password reset successful! Please login with your new password.');
+    } else {
+      // Handle error
+      final errorMessage = responseData?['message'] ?? responseData?['detail'] ?? 'Failed to reset password. Please try again.';
+      AppSnackBar.showError(context, errorMessage);
+    }
+  } catch (error) {
+    print('❌ Error in reset password request: $error');
+    AppSnackBar.showError(context, 'Network error. Please check your connection and try again.');
+  } finally {
+    setState(() => _isLoading = false);
+  }
+}
   
   void _goBackToLogin() {
     setState(() {
@@ -220,14 +276,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           size: 64,
                           color: Theme.of(context).primaryColor,
                         ),
-                        // SizedBox(height: 16),
-                        // Text(
-                        //   'Welcome Back',
-                        //   style: TextStyle(
-                        //     fontSize: 24,
-                        //     fontWeight: FontWeight.bold,
-                        //   ),
-                        // ),
                         SizedBox(height: 8),
                         Text(
                           'Sign in to continue',
@@ -379,7 +427,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             SizedBox(height: 8),
             Text(
-              'To reset your password, please enter your username. We\'ll help you create a new password.',
+              'To reset your password, please enter your email address.',
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey[700],
@@ -388,9 +436,10 @@ class _LoginScreenState extends State<LoginScreen> {
             SizedBox(height: 32),
             TextField(
               controller: _resetUsernameController,
+              keyboardType: TextInputType.emailAddress,
               decoration: InputDecoration(
-                labelText: 'Username',
-                prefixIcon: Icon(Icons.person),
+                labelText: 'Email Address',
+                prefixIcon: Icon(Icons.email),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -409,7 +458,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 : SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: _validateUsername,
+                      onPressed: _validateEmailAndContinue,
                       style: ElevatedButton.styleFrom(
                         padding: EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
@@ -496,7 +545,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
             ),
-            SizedBox(height: 32),
+            SizedBox(height: 24),
+
             TextField(
               controller: _newPasswordController,
               decoration: InputDecoration(
@@ -580,3 +630,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+
+// Helper function for min
+int min(int a, int b) => a < b ? a : b;

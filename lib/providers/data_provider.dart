@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/dynamic_model.dart';
-
+import '../config/api_config.dart';
+ 
 class FormSection {
   final String title;
   final List<String> fields;
@@ -70,6 +72,7 @@ class DataProvider with ChangeNotifier {
   String? _currentListViewId;// Store current list view ID
   String _token = '';
   String _type = '';
+  String? lastError;
 
   // Filter and sort state
   Map<String, dynamic> _activeFilters = {};
@@ -1154,93 +1157,6 @@ Future<Map<String, dynamic>> deleteTask(String taskId, String token) async {
   }
 }
 
-Future<Map<String, dynamic>> updateTask(String taskId, Map<String, dynamic> taskData, String token) async {
-  _isLoading = true;
-  _error = null;
-  _safeNotifyListeners();
-  try {
-    if (token.isEmpty) {
-      _error = 'Authentication required. Please log in.';
-      _isLoading = false;
-      _safeNotifyListeners();
-      return {'success': false, 'error': _error};
-    }
-    final url = 'https://qa.api.bussus.com/v2/api/task';
-    
-    print('🌐 Sending PATCH request to $url with task ID: $taskId');
-    print('📝 Task data: $taskData');
-    
-    final response = await http.patch(
-      Uri.parse(url),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: json.encode({
-        'id': taskId,
-        'data': taskData
-      }),
-    );
-    
-    print('📤 Update response status: ${response.statusCode}');
-    print('📤 Update response body: ${response.body}');
-    
-    if (response.statusCode == 200) {
-      final responseData = json.decode(response.body);
-      
-      // Check if the response indicates success and has updated records
-      if (responseData['success'] == true && 
-          responseData['updated_records'] != null && 
-          responseData['updated_records'].isNotEmpty) {
-        
-        // Refresh your task list or task data here
-        await refreshTaskList(); // You'll need to implement this method
-        
-        _isLoading = false;
-        _error = null;
-        _safeNotifyListeners();
-        return {'success': true, 'data': responseData['updated_records'][0]};
-      } else {
-        // The API returned 200 but no actual updates happened
-        _error = 'Update was not applied. Please check your data.';
-        _isLoading = false;
-        _safeNotifyListeners();
-        return {'success': false, 'error': _error};
-      }
-    } else {
-      String errorMessage;
-      try {
-        final responseData = json.decode(response.body);
-        errorMessage = responseData['message'] ?? 'Failed to update task';
-      } catch (e) {
-        errorMessage = 'Failed to update task. Status code: ${response.statusCode}';
-      }
-      _error = errorMessage;
-      _isLoading = false;
-      _safeNotifyListeners();
-      return {'success': false, 'error': errorMessage};
-    }
-  } catch (e) {
-    _error = 'Error occurred: $e';
-    print('❌ Error updating task: $e');
-    _isLoading = false;
-    _safeNotifyListeners();
-    return {'success': false, 'error': _error.toString()};
-  }
-}
-
-Future<void> refreshTaskList() async {
-  // Implement logic to fetch the latest task list from the server
-  // This might mean calling your existing fetchTasks() method or similar
-  try {
-    // Example: await fetchTasks(currentUserToken);
-    // You'll need to implement according to your app structure
-    print('🔄 Refreshing task list after update');
-  } catch (e) {
-    print('❌ Error refreshing tasks: $e');
-  }
-}
-
   // Add this method to your DataProvider class
 Future<Map<String, dynamic>> getFormPreview(String type, String token) async {
   String endpoint = 'https://qa.api.bussus.com/v2/api/$type/preview';
@@ -1611,212 +1527,554 @@ Future<bool> deleteItem(String type, String itemId) async {
   }
 }
 
-  Future<Map<String, dynamic>> createTask(Map<String, dynamic> taskData, String token, String type) async {
-    // Determine the correct endpoint based on the object type
-    String endpoint = 'https://qa.api.bussus.com/v2/api/$type/task';
-    _isLoading = true;
+// Update the signature of the uploadFile method in your DataProvider class
+
+Future<Map<String, dynamic>> uploadFile(String objectType, String recordId, File file) async {
+  _isLoading = true;
+  _error = null;
+  _safeNotifyListeners();
+  
+  Map<String, dynamic> result = {
+    'success': false,
+    'data': null,
+  };
+  
+  try {
+    if (_token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return result;
+    }
+    
+    // Create a multipart request
+    var request = http.MultipartRequest('POST', Uri.parse('https://qa.api.bussus.com/v2/api/file'));
+    
+    // Add headers
+    request.headers['Authorization'] = 'Bearer $_token';
+    
+    // Create JSON data part - as a separate part named 'data'
+    var jsonData = json.encode({
+      'object': objectType,
+      'record_id': recordId
+    });
+    
+    // Add the JSON as a part
+    request.fields['data'] = jsonData;
+    
+    // Add the file
+    var fileName = file.path.split('/').last;
+    var fileStream = http.ByteStream(file.openRead());
+    var fileLength = await file.length();
+    
+    var multipartFile = http.MultipartFile(
+      'file',
+      fileStream,
+      fileLength,
+      filename: fileName
+    );
+    
+    request.files.add(multipartFile);
+    
+    print('🌐 Uploading file with JSON data to: https://qa.api.bussus.com/v2/api/file');
+    print('📤 Uploading file: $fileName');
+    print('📤 With JSON data: $jsonData');
+    
+    // Send the request
+    var streamedResponse = await request.send();
+    var response = await http.Response.fromStream(streamedResponse);
+    
+    print('📊 Response status: ${response.statusCode}');
+    print('📊 Response body: ${response.body}');
+    
+    if (response.statusCode == 201) {
+      print('📤 File uploaded successfully!');
+      
+      // Parse the response
+      final Map<String, dynamic> responseData = json.decode(response.body) as Map<String, dynamic>;
+      
+      // Cast inner data to ensure correct typing
+      Map<String, dynamic> fileData = {};
+      if (responseData.containsKey('data') && responseData['data'] != null) {
+        // Cast each key/value pair to ensure they're String/dynamic
+        final rawData = responseData['data'];
+        if (rawData is Map) {
+          rawData.forEach((key, value) {
+            fileData[key.toString()] = value;
+          });
+        }
+      }
+      
+      result = {
+        'success': true,
+        'data': {
+          ...fileData,
+          'name': fileName,
+          'upload_status': 'completed',
+        },
+      };
+    } else {
+      _error = 'Failed to upload file. Status code: ${response.statusCode}';
+      print('❌ Failed to upload file: ${response.body}');
+    }
+  } catch (e) {
+    _error = 'Error occurred during file upload: $e';
+    print('❌ Error uploading file: $e');
+  } finally {
+    _isLoading = false;
     _safeNotifyListeners();
+  }
+  
+  return result;
+}
+// Fixed implementation based on working React code
+Future<bool> deleteFile(String fileId, String fileName) async {
+  _isLoading = true;
+  lastError = null;
+  _safeNotifyListeners();
+  
+  try {
+    if (_token.isEmpty) {
+      lastError = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return false;
+    }
+    
+    final String endpoint = 'https://qa.api.bussus.com/v2/api/file';
+    
+    // Create a nested data structure matching the React implementation
+    final Map<String, dynamic> payload = {
+      'data': {
+        'id': fileId,
+        'file_path': 'uploads/${fileName.split('/').last}',
+      }
+    };
+    
+    print('🗑️ Deleting file with nested payload: ${json.encode(payload)}');
+    
+    final response = await http.delete(
+      Uri.parse(endpoint),
+      headers: {
+        'Authorization': 'Bearer $_token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode(payload),
+    );
+    
+    print('📬 Response: [${response.statusCode}] ${response.body}');
+    
+    if (response.statusCode == 200) {
+      final responseData = json.decode(response.body);
+      if (responseData['success'] == true) {
+        return true;
+      } else {
+        lastError = responseData['message'] ?? 'Failed to delete file';
+        return false;
+      }
+    } else {
+      lastError = 'Failed to delete file. Status code: ${response.statusCode}';
+      return false;
+    }
+  } catch (e) {
+    lastError = 'Error occurred during file deletion: $e';
+    return false;
+  } finally {
+    _isLoading = false;
+    _safeNotifyListeners();
+  }
+}
 
+// Add this method to your DataProvider class
+Future<Map<String, dynamic>> updateFileName(Map<String, dynamic> data) async {
+  _isLoading = true;
+  _error = null;
+  _safeNotifyListeners();
+  
+  Map<String, dynamic> result = {
+    'success': false,
+    'data': null,
+  };
+  
+  try {
+    if (_token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return result;
+    }
+    
+    // Extract the file ID and new name
+    final String fileId = data['id'];
+    final String newName = data['name'];
+    
+    // Prepare the request payload according to the expected format
+    final Map<String, dynamic> payload = {
+      'data': {
+        'id': fileId,
+        'name': newName,
+      }
+    };
+    
+    print('🌐 Updating file name: $payload');
+    
+    // Make the PATCH request to update the file name
+    final response = await http.patch(
+      Uri.parse('https://qa.api.bussus.com/v2/api/file'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(payload),
+    );
+    
+    print('📊 Response status: ${response.statusCode}');
+    print('📊 Response body: ${response.body}');
+    
+    if (response.statusCode == 200) {
+      print('✅ File name updated successfully!');
+      
+      // Parse the response
+      final Map<String, dynamic> responseData = json.decode(response.body);
+      
+      // Extract the returned data
+      final Map<String, dynamic> returnedData = responseData['data'] ?? {};
+      
+      result = {
+        'success': true,
+        'data': returnedData,
+      };
+    } else {
+      _error = 'Failed to update file name. Status code: ${response.statusCode}';
+      print('❌ Failed to update file name: ${response.body}');
+    }
+  } catch (e) {
+    _error = 'Error occurred while updating file name: $e';
+    print('❌ Error updating file name: $e');
+  } finally {
+    _isLoading = false;
+    _safeNotifyListeners();
+  }
+  
+  return result;
+}
+
+
+ Future<Map<String, dynamic>> createTask(Map<String, dynamic> taskData, String token) async {
+  _isLoading = true;
+  _error = null;
+  _safeNotifyListeners();
+  
+  try {
+    if (token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': _error};
+    }
+    
+    final url = 'https://qa.api.bussus.com/v2/api/lead/task';
+    
+    // Restructure the task data to match the expected format
+    final formattedTaskData = {
+      'subject': taskData['subject'],
+      'status': taskData['status'],
+      'due_date': taskData['due_date'],
+      'assigned_to': taskData['assigned_to_name'] ?? taskData['assigned_to'],
+      'related_object_id': taskData['related_object_id'],
+      'related_to': taskData['related_to'],
+      'user_id': int.parse(taskData['assigned_to_id'].toString()),
+    };
+    
+    print('🌐 Creating new task at $url');
+    print('📝 Original task data: $taskData');
+    print('📝 Formatted task data: $formattedTaskData');
+    
+    final response = await http.post(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({
+        'data': formattedTaskData
+      }),
+    );
+    
+    print('📤 Create response status: ${response.statusCode}');
+    print('📤 Create response body: ${response.body}');
+    
+    if (response.statusCode == 201) {
+      final responseData = json.decode(response.body);
+      
+      if (responseData['success'] == true) {
+        // Refresh task list after creating a new task
+        await refreshTaskList();
+        
+        _isLoading = false;
+        _error = null;
+        _safeNotifyListeners();
+        return {'success': true, 'data': responseData['data']};
+      } else {
+        String errorMessage = 'Failed to create task';
+        if (responseData['message'] != null) {
+          errorMessage = responseData['message'];
+        } else if (responseData['errors'] != null && responseData['errors'].isNotEmpty) {
+          errorMessage = responseData['errors'][0]['error'] ?? errorMessage;
+        }
+        _error = errorMessage;
+        _isLoading = false;
+        _safeNotifyListeners();
+        return {'success': false, 'error': _error};
+      }
+    } else {
+      String errorMessage;
+      try {
+        final responseData = json.decode(response.body);
+        errorMessage = responseData['message'] ?? 'Failed to create task';
+      } catch (e) {
+        errorMessage = 'Failed to create task. Status code: ${response.statusCode}';
+      }
+      _error = errorMessage;
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': errorMessage};
+    }
+  } catch (e) {
+    _error = 'Error occurred: $e';
+    print('❌ Error creating task: $e');
+    _isLoading = false;
+    _safeNotifyListeners();
+    return {'success': false, 'error': _error.toString()};
+  }
+}
+  
+  // This method would refresh the task list
+  Future<void> refreshTaskList() async {
+    // Implement logic to refresh task list
+    // This will depend on how you're storing and managing tasks in your app
+    print('🔄 Refreshing task list...');
+    
+    // Example implementation:
+    // await fetchTasks(currentToken);
+  }
+
+ Future<Map<String, dynamic>> updateTask(String taskId, Map<String, dynamic> taskData, String token) async {
+  _isLoading = true;
+  _error = null;
+  _safeNotifyListeners();
+  try {
+    if (token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': _error};
+    }
+    final url = 'https://qa.api.bussus.com/v2/api/task';
+    
+    // Create a copy of taskData and ensure the ID is included
+    final Map<String, dynamic> dataWithId = {
+      'id': taskId,
+      ...taskData
+    };
+    
+    print('🌐 Sending PATCH request to $url with task ID: $taskId');
+    print('📝 Task data: $dataWithId');
+    
+    final response = await http.patch(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({
+        'id': taskId,
+        'data': dataWithId
+      }),
+    );
+    
+    print('📤 Update response status: ${response.statusCode}');
+    print('📤 Update response body: ${response.body}');
+    
+    if (response.statusCode == 200) {
+      final responseData = json.decode(response.body);
+      
+      // Check if the response indicates success
+      if (responseData['success'] == true) {
+        
+        // Check for errors
+        if (responseData['errors'] != null && responseData['errors'].isNotEmpty) {
+          final firstError = responseData['errors'][0];
+          if (firstError['error'] != null) {
+            _error = 'Update failed: ${firstError['error']}';
+            _isLoading = false;
+            _safeNotifyListeners();
+            return {'success': false, 'error': _error};
+          }
+        }
+        
+        // Check if there are updated records
+        if (responseData['updated_records'] != null && 
+            responseData['updated_records'].isNotEmpty) {
+            
+          // Refresh your task list or task data here
+          await refreshTaskList(); // You'll need to implement this method
+          
+          _isLoading = false;
+          _error = null;
+          _safeNotifyListeners();
+          return {'success': true, 'data': responseData['updated_records'][0]};
+        } else {
+          // The API returned 200 but no actual updates happened
+          _error = 'Update was not applied. Please check your data.';
+          _isLoading = false;
+          _safeNotifyListeners();
+          return {'success': false, 'error': _error};
+        }
+      } else {
+        _error = responseData['message'] ?? 'Failed to update task';
+        _isLoading = false;
+        _safeNotifyListeners();
+        return {'success': false, 'error': _error};
+      }
+    } else {
+      String errorMessage;
+      try {
+        final responseData = json.decode(response.body);
+        errorMessage = responseData['message'] ?? 'Failed to update task';
+      } catch (e) {
+        errorMessage = 'Failed to update task. Status code: ${response.statusCode}';
+      }
+      _error = errorMessage;
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': errorMessage};
+    }
+  } catch (e) {
+    _error = 'Error occurred: $e';
+    print('❌ Error updating task: $e');
+    _isLoading = false;
+    _safeNotifyListeners();
+    return {'success': false, 'error': _error.toString()};
+  }
+}
+Future<Map<String, dynamic>> fetchRelatedActivities(String parentId, String token) async {
     try {
-      print('🌐 Creating new task for $type with data: ${taskData.keys.join(', ')}');
-
-      // Check if token exists
+      // Log the request
+      print('🌐 Fetching related activities for parent ID: $parentId');
+      
+      // Construct the API URL for activities related to this parent
+      final url = Uri.parse('${ApiConfig.baseUrl}/v2/api/task?related_to=$parentId');
+      
+      // Make the request
+      final response = await http.get(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      
+      // Check if request was successful
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        
+        // Log success
+        print('📤 Activities response status: ${response.statusCode}');
+        print('📊 Found ${responseData['data']?.length ?? 0} related activities');
+        
+        // Return a properly formatted result
+        return {
+          'success': true,
+          'data': responseData['data'] ?? [],
+        };
+      } else {
+        // Log failure
+        print('❌ Error fetching activities: Status ${response.statusCode}');
+        print('❌ Response: ${response.body}');
+        
+        // Return error information
+        return {
+          'success': false,
+          'error': 'Failed to fetch activities. Status: ${response.statusCode}',
+          'data': [],
+        };
+      }
+    } catch (e) {
+      // Log exception
+      print('❌ Exception fetching activities: $e');
+      
+      // Return error information
+      return {
+        'success': false,
+        'error': 'Exception occurred: $e',
+        'data': [],
+      };
+    }
+  }
+  Future<Map<String, dynamic>> getUsers(String token) async {
+    _isLoading = true;
+    _error = null;
+    _safeNotifyListeners();
+    
+    try {
       if (token.isEmpty) {
         _error = 'Authentication required. Please log in.';
         _isLoading = false;
         _safeNotifyListeners();
-        return {'success': false, 'message': _error};
+        return {'success': false, 'error': _error};
       }
-
-      // Nest the task data under "data" key
-      final requestBody = {
-        "data": taskData
-      };
-
-      print('📦 Request body: ${json.encode(requestBody)}');
-
-      final response = await http.post(
-        Uri.parse(endpoint),
+      
+      final url = 'https://qa.api.bussus.com/v2/api/setup/users';
+      
+      print('🌐 Fetching users from $url');
+      
+      final response = await http.get(
+        Uri.parse(url),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-        body: json.encode(requestBody),
       );
-
-      print('📤 Create task response status code: ${response.statusCode}');
-      print('📤 Create task response body: ${response.body}');
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        final Map<String, dynamic> responseData = json.decode(response.body);
-        return {
-          'success': true,
-          'data': responseData['data']
-        };
-      } else {
-        Map<String, dynamic> responseData = {};
-        try {
-          responseData = json.decode(response.body);
-        } catch (e) {
-          print('❌ Failed to parse error response: $e');
+      
+      print('📥 Users response status: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        
+        if (responseData != null && responseData['data'] != null) {
+          _isLoading = false;
+          _error = null;
+          _safeNotifyListeners();
+          return {'success': true, 'data': responseData['data']};
+        } else {
+          _error = 'Invalid response format';
+          _isLoading = false;
+          _safeNotifyListeners();
+          return {'success': false, 'error': _error};
         }
-
-        String errorMsg = responseData['message'] ?? 'Failed to create task. Status code: ${response.statusCode}';
-        _error = errorMsg;
+      } else {
+        String errorMessage;
+        try {
+          final responseData = json.decode(response.body);
+          errorMessage = responseData['message'] ?? 'Failed to fetch users';
+        } catch (e) {
+          errorMessage = 'Failed to fetch users. Status code: ${response.statusCode}';
+        }
+        _error = errorMessage;
+        _isLoading = false;
         _safeNotifyListeners();
-        return {'success': false, 'message': errorMsg};
+        return {'success': false, 'error': errorMessage};
       }
     } catch (e) {
-      String errorMsg = 'Error occurred: $e';
-      _error = errorMsg;
-      print('❌ Error creating task: $e');
-      _safeNotifyListeners();
-      return {'success': false, 'message': errorMsg};
-    } finally {
+      _error = 'Error occurred: $e';
+      print('❌ Error fetching users: $e');
       _isLoading = false;
       _safeNotifyListeners();
+      return {'success': false, 'error': _error.toString()};
     }
   }
 
-  // Add these methods to your DataProvider class
-
-/// Fetch user information by name
-Future<Map<String, dynamic>?> getUserByName(String name, String token) async {
-  _isLoading = true;
-  _safeNotifyListeners();
-
-  try {
-    print('🔍 Looking up user by name: $name');
-
-    if (token.isEmpty) {
-      _error = 'Authentication required. Please log in.';
-      _isLoading = false;
-      _safeNotifyListeners();
-      return null;
-    }
-
-    // Endpoint to get user by name
-    final endpoint = 'https://qa.api.bussus.com/v2/api/users/search?name=$name';
-
-    final response = await http.get(
-      Uri.parse(endpoint),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    print('📤 Get user response status code: ${response.statusCode}');
-    print('📤 Get user response body: ${response.body}');
-
-    if (response.statusCode == 200) {
-      final Map<String, dynamic> responseData = json.decode(response.body);
-      // Check if any users were found
-      if (responseData['data'] != null && responseData['data'].isNotEmpty) {
-        // Return the first user that matches the name
-        return responseData['data'][0];
-      } else {
-        print('⚠️ No users found with name: $name');
-        return null;
-      }
-    } else {
-      Map<String, dynamic> responseData = {};
-      try {
-        responseData = json.decode(response.body);
-      } catch (e) {
-        print('❌ Failed to parse error response: $e');
-      }
-
-      String errorMsg = responseData['message'] ?? 'Failed to find user. Status code: ${response.statusCode}';
-      _error = errorMsg;
-      _safeNotifyListeners();
-      return null;
-    }
-  } catch (e) {
-    String errorMsg = 'Error looking up user: $e';
-    _error = errorMsg;
-    print('❌ Error getting user: $e');
-    _safeNotifyListeners();
-    return null;
-  } finally {
-    _isLoading = false;
-    _safeNotifyListeners();
-  }
-}
-
-/// Get the owner ID of a related object
-Future<int?> getRelatedObjectOwnerId(String objectId, String objectType, String token) async {
-  _isLoading = true;
-  _safeNotifyListeners();
-
-  try {
-    print('🔍 Getting owner ID for $objectType with ID: $objectId');
-
-    if (token.isEmpty) {
-      _error = 'Authentication required. Please log in.';
-      _isLoading = false;
-      _safeNotifyListeners();
-      return null;
-    }
-
-    // Endpoint to get object details
-    final endpoint = 'https://qa.api.bussus.com/v2/api/$objectType/$objectId';
-
-    final response = await http.get(
-      Uri.parse(endpoint),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    print('📤 Get object response status code: ${response.statusCode}');
-    print('📤 Get object response body: ${response.body}');
-
-    if (response.statusCode == 200) {
-      final Map<String, dynamic> responseData = json.decode(response.body);
-      // Look for owner_id or user_id in the response
-      if (responseData['data'] != null) {
-        var data = responseData['data'];
-        // Try to find owner ID in various possible field names
-        int? ownerId = data['owner_id'] ?? data['user_id'] ?? data['created_by'];
-        
-        if (ownerId == null) {
-          print('⚠️ No owner ID found for $objectType with ID: $objectId');
-        } else {
-          print('✅ Found owner ID: $ownerId');
-        }
-        
-        return ownerId;
-      } else {
-        print('⚠️ No data field in response for $objectType with ID: $objectId');
-        return null;
-      }
-    } else {
-      Map<String, dynamic> responseData = {};
-      try {
-        responseData = json.decode(response.body);
-      } catch (e) {
-        print('❌ Failed to parse error response: $e');
-      }
-
-      String errorMsg = responseData['message'] ?? 'Failed to get object details. Status code: ${response.statusCode}';
-      _error = errorMsg;
-      _safeNotifyListeners();
-      return null;
-    }
-  } catch (e) {
-    String errorMsg = 'Error getting object details: $e';
-    _error = errorMsg;
-    print('❌ Error getting object details: $e');
-    _safeNotifyListeners();
-    return null;
-  } finally {
-    _isLoading = false;
-    _safeNotifyListeners();
-  }
-}
-  // Add this to your DataProvider class
 
   Future<void> searchData(String type, String query, String token) async {
     _isLoading = true;
@@ -1826,7 +2084,6 @@ Future<int?> getRelatedObjectOwnerId(String objectId, String objectType, String 
     try {
       // Construct the URL with search parameter
       final url = Uri.parse('https://qa.api.bussus.com/v2/api/listview/$type?listview=all&search=$query&limit=10&offset=0');
-
       print('🔍 Searching $type with query: "$query"');
       print('🌐 Search URL: ${url.toString()}');
 
@@ -1876,5 +2133,4 @@ Future<int?> getRelatedObjectOwnerId(String objectId, String objectType, String 
       _safeNotifyListeners();
     }
   }
-
 }

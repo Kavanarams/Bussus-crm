@@ -4,6 +4,8 @@ import 'app_colors.dart';
 import 'app_decorations.dart';
 import 'app_text_styles.dart';
 import 'app_button_styles.dart';
+import 'app_snackbar.dart';
+import 'app_dimensions.dart';
 
 class AppTheme {
   // Create the main theme for the app
@@ -47,6 +49,18 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: AppButtonStyles.textButton,
       ),
+
+      // SnackBar theme
+      snackBarTheme: const SnackBarThemeData(
+        behavior: AppSnackBar.snackBarBehavior,
+        elevation: AppDimensions.elevationL,
+        contentTextStyle: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w500,
+          fontSize: AppDimensions.textM,
+        ),
+      ),
+      
     
       
       // Visual density for all widgets

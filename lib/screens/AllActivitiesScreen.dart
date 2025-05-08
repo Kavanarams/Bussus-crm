@@ -1,11 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'dart:convert';
-import 'dart:async';
-import 'package:http/http.dart' as http;
-import '../providers/auth_provider.dart';
-import '../providers/data_provider.dart';
-import '../models/dynamic_model.dart';
 import 'task_detail_screen.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_dimensions.dart';

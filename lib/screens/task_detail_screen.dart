@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:convert';
 import 'dart:async';
-import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../providers/data_provider.dart'; // Import DataProvider
 import '../theme/app_colors.dart';
@@ -11,6 +9,7 @@ import '../theme/app_text_styles.dart';
 import '../theme/app_button_styles.dart';
 import '../theme/app_decorations.dart';
 import 'taskeditscreen.dart';
+import '../theme/app_snackbar.dart';
 
 class TaskDetailScreen extends StatefulWidget {
   final String taskId;
@@ -135,21 +134,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         _logDebug('Reloading task details');
         await _loadTaskDetails();
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Task details updated'),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        AppSnackBar.showSuccess(context, 'Task details updated');
       }
     } catch (e) {
       _logDebug('Error navigating to edit screen: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error opening edit screen: $e'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnackBar.showError(context, 'error opening the edit screen $e');
     }
   }
   
@@ -160,12 +149,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       // Check if context is valid
       if (_moreButtonKey.currentContext == null) {
         _logDebug('More button key context is null');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cannot show options menu'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        AppSnackBar.showError(context, 'cannot show options menu');
         return;
       }
       
@@ -222,12 +206,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       );
     } catch (e) {
       _logDebug('Error showing more options menu: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error showing options menu: $e'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnackBar.showError(context, 'erorr showning option menu $e');
     }
   }
   
@@ -237,22 +216,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     try {
       // Implement your API call here to mark the task as complete
       // For now, show a placeholder message
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Marking task as complete...'),
-          backgroundColor: AppColors.primary,
-        ),
-      );
+      AppSnackBar.showSuccess(context, 'Marking task as completed...');
       
       // In the real implementation, you would update the status and reload the task
     } catch (e) {
       _logDebug('Error marking task complete: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error marking task complete: $e'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnackBar.showError(context, 'eror marking task complete $e');
     }
   }
   
@@ -272,21 +241,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       if (pickedDate != null) {
         // Implement your API call here to change the task date
         // For now, show a placeholder message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Date change functionality will be implemented'),
-            backgroundColor: AppColors.primary,
-          ),
-        );
+        AppSnackBar.showWarning(context, 'date change will be implemented');
       }
     } catch (e) {
       _logDebug('Error changing task date: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error changing task date: $e'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnackBar.showError(context, 'eror changing the date');
     }
   }
 
@@ -339,81 +298,71 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       _logDebug('Delete result: $result');
 
       if (result['success']) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Task deleted successfully'),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        AppSnackBar.showWarning(context, 'Task deleted successfully');
         Navigator.pop(context, true); // Return true to refresh the previous screen
       } else {
         String errorMessage = result['error'] ?? 'Failed to delete task';
         _logDebug('Error message: $errorMessage');
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        AppSnackBar.showError(context, errorMessage);
       }
     }
   } catch (e) {
     _logDebug('Error deleting task: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Error deleting task: $e'),
-        backgroundColor: AppColors.error,
-      ),
-    );
+    AppSnackBar.showError(context, 'eror deleting the task');
   }
 }
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Task Details'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Search functionality coming soon')),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.notifications),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Notifications functionality coming soon')),
-              );
-            },
-          ),
-        ],
+Widget build(BuildContext context) {
+  final theme = Theme.of(context);
+  
+  return Scaffold(
+    appBar: AppBar(
+      title: const Text('Task Details'),
+      // Add a custom leading button that will pop with a result
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () {
+          // Return true to indicate that refresh might be needed
+          print('⬅️ Returning from TaskDetailScreen with refresh signal');
+          Navigator.pop(context, true);
+        },
       ),
-      backgroundColor: AppColors.background,
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!, style: AppTextStyles.bodyMedium))
-              : SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildHeaderWithActions(),
-                      _buildTaskDetailsCard(),
-                      // Add related activities section if available
-                      if (_taskDetails.containsKey('related_activities'))
-                        _buildRelatedActivitiesSection(),
-                    ],
-                  ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.search),
+          onPressed: () {
+            AppSnackBar.showWarning(context, 'search functionality will be implemented');
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.notifications),
+          onPressed: () {
+            AppSnackBar.showWarning(context, 'notification will be implemented');
+          },
+        ),
+      ],
+    ),
+    backgroundColor: AppColors.background,
+    body: _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : _error != null
+            ? Center(child: Text(_error!, style: AppTextStyles.bodyMedium))
+            : SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeaderWithActions(),
+                    _buildTaskDetailsCard(),
+                    // Add related activities section if available
+                    if (_taskDetails.containsKey('related_activities'))
+                      _buildRelatedActivitiesSection(),
+                  ],
                 ),
-    );
-  }
+              ),
+  );
+}
 
   Widget _buildHeaderWithActions() {
     return Container(

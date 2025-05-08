@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../providers/data_provider.dart'; // Import your data provider
+import '../providers/data_provider.dart';
 import '../theme/app_dimensions.dart';
-import '../theme/app_text_styles.dart';
+import '../theme/app_snackbar.dart'; // Import our SnackBar utility
 
 class TaskFormScreen extends StatefulWidget {
   final String relatedObjectId;
@@ -24,11 +24,14 @@ class TaskFormScreen extends StatefulWidget {
 class _TaskFormScreenState extends State<TaskFormScreen> {
   final TextEditingController subjectController = TextEditingController();
   final TextEditingController dueDateController = TextEditingController();
-  final TextEditingController assignedToController = TextEditingController();
   final TextEditingController relatedToController = TextEditingController();
   String selectedStatus = 'Not Started';
   DateTime? selectedDate;
   bool _isSaving = false;
+  bool _isLoadingUsers = true;
+  String? _error;
+  List<Map<String, dynamic>> _users = [];
+  String? selectedUserId; // To store selected user ID
   
   // Error state variables
   Map<String, bool> fieldErrors = {
@@ -42,22 +45,50 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
     super.initState();
     // Initialize related to field
     relatedToController.text = widget.relatedObjectName ?? widget.relatedObjectType;
+    // Fetch users when screen loads
+    _fetchUsers();
   }
 
-  // Show custom snackbar at the top
-  void showTopSnackBar({required String message, required Color backgroundColor}) {
-    // Clear any existing snackbars
-    ScaffoldMessenger.of(context).clearSnackBars();
+  // Fetch users for the dropdown
+  Future<void> _fetchUsers() async {
+    setState(() {
+      _isLoadingUsers = true;
+    });
     
-    // Show the new snackbar
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: backgroundColor,
-        behavior: SnackBarBehavior.fixed,
-        duration: Duration(seconds: 3),
-      ),
-    );
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final dataProvider = Provider.of<DataProvider>(context, listen: false);
+      final token = authProvider.token;
+      
+      if (token.isEmpty) {
+        setState(() {
+          _isLoadingUsers = false;
+          _error = 'Authentication required to fetch users. Please log in.';
+        });
+        return;
+      }
+      
+      // Get users from your data provider
+      final result = await dataProvider.getUsers(token);
+      
+      if (result['success']) {
+        setState(() {
+          _users = List<Map<String, dynamic>>.from(result['data']);
+          _isLoadingUsers = false;
+        });
+        print('✅ Fetched ${_users.length} users');
+      } else {
+        setState(() {
+          _isLoadingUsers = false;
+          _error = 'Failed to load users: ${result['error']}';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoadingUsers = false;
+        _error = 'Error loading users: $e';
+      });
+    }
   }
 
   // Function to show date picker with theme styling
@@ -182,6 +213,13 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                                 ),
                                 errorStyle: TextStyle(height: 0),
                               ),
+                              onChanged: (value) {
+                                if (value.isNotEmpty) {
+                                  setState(() {
+                                    fieldErrors['subject'] = false;
+                                  });
+                                }
+                              },
                             ),
                           ),
                           
@@ -208,23 +246,63 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                             ),
                           ),
                           
-                          // Assigned To field
+                          // Assigned To dropdown field
                           buildFormField(
                             label: 'Assigned To',
                             isRequired: true,
                             isError: fieldErrors['assignedTo'] ?? false,
-                            child: TextField(
-                              controller: assignedToController,
-                              decoration: InputDecoration(
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 16, 
-                                  vertical: 14
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                errorStyle: TextStyle(height: 0),
+                            child: Container(
+                              height: 52,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade400),
+                                borderRadius: BorderRadius.circular(8),
                               ),
+                              child: _isLoadingUsers
+                                ? Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.symmetric(horizontal: 16),
+                                      child: Row(
+                                        children: [
+                                          SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                          SizedBox(width: 10),
+                                          Text('Loading users...'),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                : DropdownButtonHideUnderline(
+                                    child: Padding(
+                                      padding: EdgeInsets.symmetric(horizontal: 8.0),
+                                      child: DropdownButton<String>(
+                                        value: selectedUserId,
+                                        isExpanded: true,
+                                        hint: Text('Select User'),
+                                        icon: Icon(Icons.arrow_drop_down),
+                                        items: _users.map((user) {
+                                          return DropdownMenuItem<String>(
+                                            value: user['id'].toString(),
+                                            child: Text(user['name'] != null && user['name'].isNotEmpty
+                                              ? user['name']
+                                              : (user['email'] ?? 'Unknown User')),
+                                          );
+                                        }).toList(),
+                                        onChanged: (String? newValue) {
+                                          if (newValue != null) {
+                                            setState(() {
+                                              selectedUserId = newValue;
+                                              fieldErrors['assignedTo'] = false;
+                                            });
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  ),
                             ),
                           ),
                           
@@ -342,116 +420,106 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
     );
   }
 
- Future<void> _saveTask() async {
-  // Reset all error flags
-  setState(() {
-    fieldErrors = {
-      'subject': subjectController.text.isEmpty,
-      'dueDate': dueDateController.text.isEmpty,
-      'assignedTo': assignedToController.text.isEmpty,
-    };
-  });
-
-  // Check if any field is empty
-  if (fieldErrors.values.contains(true)) {
-    showTopSnackBar(
-      message: 'Please fill in all required fields',
-      backgroundColor: Theme.of(context).colorScheme.error,
-    );
-    return;
-  }
-
-  // Check if assignedTo field has content
-  if (assignedToController.text.trim().isEmpty) {
+  Future<void> _saveTask() async {
+    // Reset all error flags
     setState(() {
-      fieldErrors['assignedTo'] = true;
+      fieldErrors = {
+        'subject': subjectController.text.isEmpty,
+        'dueDate': dueDateController.text.isEmpty,
+        'assignedTo': selectedUserId == null,
+      };
     });
-    showTopSnackBar(
-      message: 'Please specify a user to assign the task to',
-      backgroundColor: Theme.of(context).colorScheme.error,
-    );
-    return;
-  }
 
-  setState(() {
-    _isSaving = true;
-  });
-
-  final authProvider = Provider.of<AuthProvider>(context, listen: false);
-  final dataProvider = Provider.of<DataProvider>(context, listen: false);
-  final token = authProvider.token;
-  
-  // Try to get user ID from data provider based on assigned user's name
-  Map<String, dynamic>? userInfo;
-  try {
-    userInfo = await dataProvider.getUserByName(assignedToController.text, token);
-  } catch (e) {
-    print('❌ Error in getUserByName: $e');
-  }
-  
-  // Check if we found a valid user ID
-  if (userInfo == null || !userInfo.containsKey('id')) {
-    setState(() {
-      _isSaving = false;
-      fieldErrors['assignedTo'] = true;
-    });
-    showTopSnackBar(
-      message: 'Could not find a user with the name "${assignedToController.text}"',
-      backgroundColor: Colors.red,
-    );
-    return;
-  }
-  
-  final userId = userInfo['id'];
-  print('✅ Found user ID: $userId for ${assignedToController.text}');
-
-  final taskData = {
-    'subject': subjectController.text,
-    'status': selectedStatus,
-    'due_date': dueDateController.text,
-    'assigned_to_id': userId, // The specific user ID we found
-    'assigned_to': assignedToController.text, // Also include the display name
-    'related_object_id': widget.relatedObjectId,
-    'related_to': widget.relatedObjectName ?? widget.relatedObjectType,
-  };
-
-  print('📦 Final task data: $taskData');
-
-  try {
-    // Using the data provider's createTask method
-    final result = await dataProvider.createTask(
-      taskData, 
-      token, 
-      widget.relatedObjectType
-    );
-
-    if (result['success']) {
-      // Success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Task added successfully'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.fixed,
-          duration: Duration(seconds: 3),
-        ),
+    // Check if any field is empty
+    if (fieldErrors.values.contains(true)) {
+      // Using our global SnackBar utility
+      AppSnackBar.showError(
+        context,
+        'Please fill in all required fields',
       );
-      Navigator.pop(context, true);
-    } else {
-      showTopSnackBar(
-        message: result['message'] ?? 'Failed to add task',
-        backgroundColor: Colors.red,
-      );
+      return;
     }
-  } catch (e) {
-    print('❌ Error creating task: $e');
-    showTopSnackBar(
-      message: 'Error creating task: $e',
-      backgroundColor: Colors.red,
-    );
-  } finally {
+
     setState(() {
-      _isSaving = false;
+      _isSaving = true;
     });
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final dataProvider = Provider.of<DataProvider>(context, listen: false);
+    final token = authProvider.token;
+    
+    // Find the selected user to get their data
+    final selectedUser = _users.firstWhere(
+      (user) => user['id'].toString() == selectedUserId,
+      orElse: () => {},
+    );
+    
+    if (selectedUser.isEmpty) {
+      setState(() {
+        _isSaving = false;
+        fieldErrors['assignedTo'] = true;
+      });
+      
+      // Using our global SnackBar utility
+      AppSnackBar.showError(
+        context,
+        'Please select a valid user to assign the task to',
+      );
+      return;
+    }
+    
+    final String userEmail = selectedUser['email'] ?? '';
+    final String userName = selectedUser['name'] ?? userEmail;
+    
+    print('✅ Found user: $userName (ID: $selectedUserId)');
+
+    // Prepare task data using the expected format based on successful example
+    final taskData = {
+      'subject': subjectController.text,
+      'status': selectedStatus,
+      'due_date': dueDateController.text,
+      'assigned_to_id': selectedUserId, // Will be converted to user_id in provider
+      'assigned_to': userName, // Using full name instead of email
+      'assigned_to_name': userName, // Include for backward compatibility
+      'related_object_id': widget.relatedObjectId,
+      'related_to': widget.relatedObjectName ?? widget.relatedObjectType,
+    };
+
+    print('📦 Final task data: $taskData');
+
+    try {
+      // Using the data provider's createTask method
+      final result = await dataProvider.createTask(
+        taskData, 
+        token, 
+      );
+
+      if (result['success']) {
+        // Using our global SnackBar utility for success message
+        AppSnackBar.showSuccess(
+          context,
+          'Task added successfully',
+        );
+        Navigator.pop(context, true);
+      } else {
+        // Using our global SnackBar utility for error message
+        AppSnackBar.showError(
+          context,
+          result['error'] ?? 'Failed to add task',
+        );
+      }
+    } catch (e) {
+      print('❌ Error creating task: $e');
+      
+      // Using our global SnackBar utility for error message
+      AppSnackBar.showError(
+        context,
+        'Error creating task: $e',
+      );
+    } finally {
+      setState(() {
+        _isSaving = false;
+      });
+    }
   }
-}
 }

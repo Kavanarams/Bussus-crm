@@ -3,19 +3,18 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/data_provider.dart';
 import '../models/dynamic_model.dart';
-import 'menu_screen.dart';
 import 'home_screen.dart';
 import 'new_item_screen.dart';
 import 'details_screen.dart';
 import 'edit_screen.dart';
 import 'dart:async';
-import 'filter_logic.dart' as filterlogic;
 import 'filterpage.dart' as filter;
 import 'sortpage.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../theme/app_dimensions.dart';
 import '../theme/app_decorations.dart';
+import '../theme/app_snackbar.dart';
 
 class ListScreen extends StatefulWidget {
   final String type;
@@ -191,12 +190,7 @@ class _ListScreenState extends State<ListScreen> {
       setState(() {});
       
       // Show a confirmation snackbar if you want
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Sorting applied'),
-          duration: Duration(seconds: 1),
-        ),
-      );
+      AppSnackBar.showSuccess(context, 'Sorting applied');
     }
   }
 
@@ -752,19 +746,7 @@ class _ListScreenState extends State<ListScreen> {
                       if (result == true) {
                         // We could refresh data here, but it's already done in updateItem method
                         // Just show a confirmation
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Item updated successfully!'),
-                            backgroundColor: AppColors.success,
-                            duration: Duration(seconds: 2),
-                            behavior: SnackBarBehavior.floating,
-                            margin: EdgeInsets.only(
-                              top: 100,
-                              left: 10,
-                              right: 10,
-                            ),
-                          ),
-                        );
+                        AppSnackBar.showSuccess(context, 'Item updated successfully');
                       }
                     }
                   },

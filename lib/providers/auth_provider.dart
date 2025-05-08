@@ -184,12 +184,36 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // Updated logout method to call the API endpoint
   Future<void> logout() async {
-    _token = null;
-    _user = User.empty();
-    await _storage.delete(key: 'auth_token');
-    await _storage.delete(key: 'user_data');
-    _isInitialized = true;
-    notifyListeners();
+    try {
+      // Only call the API if we have a valid token
+      if (_token != null && _token!.isNotEmpty) {
+        print('🔐 Logging out via API...');
+        
+        // Make the API call to logout
+        final response = await http.post(
+          Uri.parse('https://qa.api.bussus.com/v2/logout'),
+          headers: {
+            'Authorization': 'Bearer $_token',
+            'Content-Type': 'application/json',
+          },
+        );
+        
+        print('🔐 Logout API response: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('🔐 Error during API logout: $e');
+      // Continue with local logout even if API call fails
+    } finally {
+      // Clear local storage and state regardless of API call success
+      _token = null;
+      _user = User.empty();
+      await _storage.delete(key: 'auth_token');
+      await _storage.delete(key: 'user_data');
+      _isInitialized = true;
+      notifyListeners();
+      print('🔐 Local logout completed');
+    }
   }
 }

@@ -4,7 +4,6 @@ import 'package:fl_chart/fl_chart.dart';
 import '../providers/dashboard_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/dashboard_item.dart';
-import '../widgets/widget_factory.dart';
 import '../widgets/user_profile_widget.dart'; // Import the new widget
 import 'list_screen.dart';
 import 'menu_screen.dart';

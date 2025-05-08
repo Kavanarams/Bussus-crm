@@ -9,6 +9,7 @@ import '../theme/app_text_styles.dart';
 import '../theme/app_button_styles.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../theme/app_snackbar.dart';
 
 class NewItemScreen extends StatefulWidget {
   final String type;
@@ -357,12 +358,12 @@ class _NewItemScreenState extends State<NewItemScreen> {
         formData,
         authProvider.token,
       );
-      
+
       if (result['success']) {
         // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)} created successfully')),
-        );
+        
+          AppSnackBar.showSuccess(context, '${widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)} created successfully');
+        
         
         // Navigate back
         Navigator.of(context).pop();
