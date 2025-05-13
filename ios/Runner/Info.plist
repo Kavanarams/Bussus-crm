@@ -25,7 +25,7 @@
 
   <!-- ✅ Also update this -->
   <key>CFBundleVersion</key>
-  <string>2</string>
+  <string>3</string>
 
   <key>LSRequiresIPhoneOS</key>
   <true/>
