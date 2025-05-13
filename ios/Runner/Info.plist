@@ -25,7 +25,11 @@
 
   <!-- ✅ Also update this -->
   <key>CFBundleVersion</key>
-  <string>3</string>
+  <string>4</string>
+
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>This app requires access to your photo library to allow users to select and upload images.</string>
+
 
   <key>LSRequiresIPhoneOS</key>
   <true/>
