@@ -1,3 +1,3 @@
 class ApiConfig {
-  static const String baseUrl = 'https://qa.api.bussus.com/v2';
+  static const String baseUrl = 'https://dev.api.bussus.com/v2';
 } 
