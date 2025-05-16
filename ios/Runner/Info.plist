@@ -30,6 +30,8 @@
   <key>NSPhotoLibraryUsageDescription</key>
   <string>This app requires access to your photo library to allow users to select and upload images.</string>
 
+  <key>NSCameraUsageDescription</key>
+  <string>This app requires access to the camera to take and upload photos.</string>
 
   <key>LSRequiresIPhoneOS</key>
   <true/>
