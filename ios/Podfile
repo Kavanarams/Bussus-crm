@@ -2,7 +2,7 @@ platform :ios, '12.0' # ✅ Make sure this line is uncommented
 
 install! 'cocoapods',
   :warn_for_unused_master_specs_repo => false
-
+ 
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -29,7 +29,7 @@ flutter_ios_podfile_setup
 
 target 'Runner' do
   use_frameworks! # ✅ Required for Swift and to expose Flutter module correctly
-
+  use_modular_headers!
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 
   # ✅ If needed, add any extra pods here
