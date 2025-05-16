@@ -1,10 +1,8 @@
-platform :ios, '12.0' # ✅ Make sure this line is uncommented
+platform :ios, '12.0'
 
 install! 'cocoapods',
   :warn_for_unused_master_specs_repo => false
- 
 
-# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
 project 'Runner', {
@@ -28,18 +26,17 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 flutter_ios_podfile_setup
 
 target 'Runner' do
-  use_frameworks! # ✅ Required for Swift and to expose Flutter module correctly
+  use_frameworks!
   use_modular_headers!
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
-
-  # ✅ If needed, add any extra pods here
 end
 
+# ✅ Fix the missing Flutter header issue
 post_install do |installer|
-    installer.pods_project.targets.each do |target|
-      target.build_configurations.each do |config|
-        config.build_settings['ENABLE_BITCODE'] = 'NO'
-      end
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['ENABLE_BITCODE'] = 'NO' # Optional but recommended
+      config.build_settings['DEFINES_MODULE'] = 'YES' # ✅ Required to expose Flutter module
     end
   end
-  
+end
