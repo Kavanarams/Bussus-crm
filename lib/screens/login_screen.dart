@@ -16,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _obscurePassword = true; // Password visibility state
   
   // Password reset state
   bool _showForgotPassword = false;
@@ -24,6 +25,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   String _resetEmail = ''; // To store the email for the reset process
+  bool _obscureNewPassword = true; // New password visibility state
+  bool _obscureConfirmPassword = true; // Confirm password visibility state
   
   // Password validation patterns
   final RegExp _upperCasePattern = RegExp(r'[A-Z]');
@@ -87,6 +90,8 @@ class _LoginScreenState extends State<LoginScreen> {
       _newPasswordController.clear();
       _confirmPasswordController.clear();
       _resetEmail = '';
+      _obscureNewPassword = true;
+      _obscureConfirmPassword = true;
     });
   }
   
@@ -227,6 +232,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() {
       _showForgotPassword = false;
       _showNewPasswordFields = false;
+      _obscurePassword = true; // Reset password visibility when going back
     });
   }
 
@@ -308,6 +314,19 @@ class _LoginScreenState extends State<LoginScreen> {
                           decoration: InputDecoration(
                             labelText: 'Password',
                             prefixIcon: Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword 
+                                    ? Icons.visibility_off 
+                                    : Icons.visibility,
+                                color: Theme.of(context).primaryColor.withOpacity(0.6),
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _obscurePassword = !_obscurePassword;
+                                });
+                              },
+                            ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -319,7 +338,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ),
-                          obscureText: true,
+                          obscureText: _obscurePassword,
                         ),
                         SizedBox(height: 8),
                         Align(
@@ -552,6 +571,19 @@ class _LoginScreenState extends State<LoginScreen> {
               decoration: InputDecoration(
                 labelText: 'New Password',
                 prefixIcon: Icon(Icons.lock_outline),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureNewPassword 
+                        ? Icons.visibility_off 
+                        : Icons.visibility,
+                    color: Theme.of(context).primaryColor.withOpacity(0.6),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscureNewPassword = !_obscureNewPassword;
+                    });
+                  },
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -563,7 +595,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-              obscureText: true,
+              obscureText: _obscureNewPassword,
             ),
             SizedBox(height: 24),
             TextField(
@@ -571,6 +603,19 @@ class _LoginScreenState extends State<LoginScreen> {
               decoration: InputDecoration(
                 labelText: 'Confirm New Password',
                 prefixIcon: Icon(Icons.lock),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureConfirmPassword 
+                        ? Icons.visibility_off 
+                        : Icons.visibility,
+                    color: Theme.of(context).primaryColor.withOpacity(0.6),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscureConfirmPassword = !_obscureConfirmPassword;
+                    });
+                  },
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -582,7 +627,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-              obscureText: true,
+              obscureText: _obscureConfirmPassword,
             ),
             SizedBox(height: 32),
             _isLoading

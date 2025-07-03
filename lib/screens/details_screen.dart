@@ -14,6 +14,8 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:io' show File;
 import 'task_detail_screen.dart';
 import '../theme/app_snackbar.dart';
+import 'home_screen.dart';
+import 'AllFilesPage.dart';
 
 
 class DetailsScreen extends StatefulWidget {
@@ -48,7 +50,10 @@ class _DetailsScreenState extends State<DetailsScreen> {
   bool _historySectionExpanded = false;
   bool _showAllActivities = false;          // Controls whether to show all activities or just 2
  
-
+  DynamicModel? _dynamicModel;
+  // Add these variables to your widget's state
+  bool _showAllImages = false;
+  bool _showAllOtherFiles = false;
   
   // Map to keep track of expanded sections - the key is the section title
   final Map<String, bool> _expandedSections = {};
@@ -60,7 +65,11 @@ class _DetailsScreenState extends State<DetailsScreen> {
   }
 
  
+// Replace your _loadDetails method in DetailsScreen with this enhanced version:
+
 Future<void> _loadDetails() async {
+  print('📄 Loading details for ${widget.type} ID: ${widget.itemId}');
+  
   setState(() {
     _isLoading = true;
     _error = null;
@@ -69,13 +78,24 @@ Future<void> _loadDetails() async {
   try {
     final dataProvider = Provider.of<DataProvider>(context, listen: false);
     
+    // Clear any cached data to force fresh load
+    print('📄 Fetching fresh data from server...');
+    
     // Fetch details using DataProvider
     final result = await dataProvider.fetchItemDetails(widget.type, widget.itemId);
     
-    // Process the result
+    print('📄 Server response received, processing data...');
+    
+    // Extract raw details and columns
     _details = result['data'] ?? {};
     _allColumns = _extractColumns(result['all_columns'] ?? []);
     _visibleColumns = List<String>.from(result['visible_columns'] ?? []);
+    
+    // ✅ CREATE A DYNAMICMODEL INSTANCE TO HANDLE RELATIONSHIP FIELDS PROPERLY
+    _dynamicModel = DynamicModel.fromJson(_details, _visibleColumns);
+    
+    print('📄 Item details loaded: ${_details.keys.length} fields');
+    print('📄 Item name: ${_details['name'] ?? 'N/A'}');
 
     // Handle layout sections as a list
     if (result['layout'] != null && result['layout']['sections'] != null) {
@@ -88,7 +108,7 @@ Future<void> _loadDetails() async {
         // Initialize all sections as collapsed by default
         for (var section in _layoutSections) {
           String title = section['title'] ?? 'Details';
-          _expandedSections[title] = false;
+          _expandedSections[title] = true;
         }
         
         // If there's a default section and no layout sections, initialize that too
@@ -102,6 +122,9 @@ Future<void> _loadDetails() async {
     if (result['tasks'] != null) {
       _activities = List<Map<String, dynamic>>.from(result['tasks']);
       print('📊 Loaded ${_activities.length} activities from preview response');
+    } else {
+      _activities = [];
+      print('📊 No activities found in response');
     }
 
     // Extract related data
@@ -127,6 +150,9 @@ Future<void> _loadDetails() async {
       setState(() {
         _error = dataProvider.error;
       });
+      print('❌ DataProvider error: ${dataProvider.error}');
+    } else {
+      print('✅ Details loaded successfully');
     }
   } catch (e) {
     setState(() {
@@ -137,9 +163,9 @@ Future<void> _loadDetails() async {
     setState(() {
       _isLoading = false;
     });
+    print('📄 Details loading completed');
   }
 }
-
   List<ColumnInfo> _extractColumns(List<dynamic> columns) {
     return columns.map((column) => ColumnInfo.fromJson(column)).toList();
   }
@@ -162,7 +188,754 @@ Future<void> _loadDetails() async {
     return false;
   }
   
-  void _editFileName(Map<String, dynamic> attachment) {
+
+ @override
+Widget build(BuildContext context) {
+  return Scaffold(
+    appBar: PreferredSize(
+      preferredSize: Size.fromHeight(AppDimensions.appBarHeight),
+      child: AppBar(
+        title: Text("Details"),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () {}
+          ),
+          IconButton(
+            icon: const Icon(Icons.notifications),
+            onPressed: () {}
+          ),
+        ],
+      ),
+    ),
+    backgroundColor: AppColors.background,
+    body: _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : _error != null
+        ? Center(child: Text(_error!, style: AppTextStyles.bodyMedium))
+        : SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeaderInfo(),
+                // Use consistent container for all sections
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: AppDimensions.spacingL, 
+                    vertical: AppDimensions.spacingS
+                  ),
+                  child: Column(
+                    children: [
+                      // Layout sections with consistent styling
+                      ..._layoutSections.isNotEmpty
+                          ? _layoutSections.map((section) {
+                              return _buildExpandableSection(section);
+                            }).toList()
+                          : [_buildExpandableDefaultSection()],
+                      // Activities section with consistent styling
+                      _buildActivitiesSection(),
+                      _buildRelatedSection(),
+                      _buildAttachmentsSection(),
+                      _buildHistorySection(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+    bottomNavigationBar: _buildBottomNavBar(),
+  );
+}
+
+  Widget _buildRelatedSection() {
+  return Card(
+    margin: EdgeInsets.symmetric(vertical: AppDimensions.spacingXs),
+    child: Column(
+      children: [
+        // Header with expand/collapse functionality
+        InkWell(
+          onTap: () {
+            setState(() {
+              _relatedSectionExpanded = !_relatedSectionExpanded;
+            });
+          },
+          child: Padding(
+            padding: EdgeInsets.all(AppDimensions.spacingM),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Related Items',
+                      style: AppTextStyles.cardTitle,
+                    ),
+                    SizedBox(width: AppDimensions.spacingS),
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: AppDimensions.spacingS, 
+                        vertical: AppDimensions.spacingXs
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.statusBadgeBg,
+                        borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
+                      ),
+                      child: Text(
+                        '${_relatedData.keys.length}',
+                        style: TextStyle(
+                          color: AppColors.statusBadgeText,
+                          fontWeight: FontWeight.bold,
+                          fontSize: AppDimensions.textS,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                Icon(
+                  _relatedSectionExpanded 
+                      ? Icons.keyboard_arrow_up 
+                      : Icons.keyboard_arrow_down,
+                  color: AppColors.primary,
+                  size: AppDimensions.iconL,
+                ),
+              ],
+            ),
+          ),
+        ),
+        
+        // Content - only visible when expanded
+        if (_relatedSectionExpanded) ...[
+          Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
+          if (_relatedData.isEmpty) 
+            Padding(
+              padding: EdgeInsets.all(AppDimensions.spacingM),
+              child: Text(
+                'No related items found',
+                style: AppTextStyles.secondaryText,
+              ),
+            )
+          else
+            Column(
+              children: _relatedData.entries.map((entry) {
+                final String relationType = entry.key;
+                final List<dynamic> items = entry.value is List ? entry.value : [];
+                
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.all(AppDimensions.spacingM),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _formatRelationType(relationType),
+                            style: AppTextStyles.subheading,
+                          ),
+                          SizedBox(height: AppDimensions.spacingM),
+                          if (items.isEmpty)
+                            Text(
+                              'No ${_formatRelationType(relationType).toLowerCase()} found',
+                              style: AppTextStyles.secondaryText,
+                            )
+                          else
+                            Column(
+                              children: items.map((item) => _buildRelatedItem(item, relationType)).toList(),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (entry.key != _relatedData.keys.last)
+                     Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
+                  ],
+                );
+              }).toList(),
+            ),
+        ],
+      ],
+    ),
+  );
+}
+
+
+String _formatRelationType(String type) {
+  // Convert snake_case to Title Case
+  return type
+      .split('_')
+      .map((word) => word.isNotEmpty 
+          ? '${word[0].toUpperCase()}${word.substring(1)}' 
+          : '')
+      .join(' ');
+}
+
+Widget _buildRelatedItem(Map<String, dynamic> item, String relationType) {
+  return ListTile(
+    contentPadding: EdgeInsets.zero,
+    title: Text(
+      item['name'] ?? 'Unnamed Item',
+      style: AppTextStyles.bodyLarge,
+    ),
+    trailing: Icon(Icons.chevron_right, color: AppColors.primary),
+    onTap: () {
+      // Navigate to the details screen for this item
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => DetailsScreen(
+            type: relationType.contains('_') ? relationType.split('_').last : relationType,
+            itemId: item['id'],
+          ),
+        ),
+      );
+    },
+  );
+}
+Widget _buildAttachmentsSection() {
+  // Separate images from other files
+  final images = _attachments.where((attachment) {
+    final String fileType = attachment['type'] ?? '';
+    final String fileName = attachment['name'] ?? '';
+    return fileType == 'image' || 
+        ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].contains(fileName.split('.').last.toLowerCase());
+  }).toList();
+  
+  final otherFiles = _attachments.where((attachment) {
+    final String fileType = attachment['type'] ?? '';
+    final String fileName = attachment['name'] ?? '';
+    return !(fileType == 'image' || 
+        ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].contains(fileName.split('.').last.toLowerCase()));
+  }).toList();
+
+  return Card(
+    margin: EdgeInsets.symmetric(vertical: AppDimensions.spacingXs),
+    child: Column(
+      children: [
+        // Header with expand/collapse functionality
+        InkWell(
+          onTap: () {
+            setState(() {
+              _attachmentsSectionExpanded = !_attachmentsSectionExpanded;
+            });
+          },
+          child: Padding(
+            padding: EdgeInsets.all(AppDimensions.spacingM),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Files',
+                      style: AppTextStyles.cardTitle,
+                    ),
+                    SizedBox(width: AppDimensions.spacingS),
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: AppDimensions.spacingS, 
+                        vertical: AppDimensions.spacingXs
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.statusBadgeBg,
+                        borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
+                      ),
+                      child: Text(
+                        '${_attachments.length}',
+                        style: TextStyle(
+                          color: AppColors.statusBadgeText,
+                          fontWeight: FontWeight.bold,
+                          fontSize: AppDimensions.textS,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                Icon(
+                  _attachmentsSectionExpanded 
+                      ? Icons.keyboard_arrow_up 
+                      : Icons.keyboard_arrow_down,
+                  color: AppColors.primary,
+                  size: AppDimensions.iconL,
+                ),
+              ],
+            ),
+          ),
+        ),
+        
+        // Content - only visible when expanded
+        if (_attachmentsSectionExpanded) ...[
+          Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
+          _attachments.isEmpty
+            ? Padding(
+                padding: EdgeInsets.all(AppDimensions.spacingM),
+                child: Text(
+                  'No files attached',
+                  style: AppTextStyles.secondaryText,
+                ),
+              )
+            : Column(
+                children: [
+                  // Images Section
+                  if (images.isNotEmpty) ...[
+                    Padding(
+                      padding: EdgeInsets.all(AppDimensions.spacingM),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Images (${images.length})',
+                            style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          if (images.length > 2)
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  _showAllImages = !_showAllImages;
+                                });
+                              },
+                              child: Text(
+                                _showAllImages ? 'Show Less' : 'View All',
+                                style: TextStyle(color: AppColors.primary),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    // Show images based on view state
+                    ...(_showAllImages ? images : images.take(2)).map((image) => _buildImagePreview(image)).toList(),
+                    if (!_showAllImages && images.length > 2)
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingM, vertical: AppDimensions.spacingS),
+                        child: Text(
+                          '+${images.length - 2} more images',
+                          style: AppTextStyles.labelText,
+                        ),
+                      ),
+                  ],
+                  
+                  // Other Files Section
+                  if (otherFiles.isNotEmpty) ...[
+                    if (images.isNotEmpty) Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
+                    Padding(
+                      padding: EdgeInsets.all(AppDimensions.spacingM),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Other Files (${otherFiles.length})',
+                            style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          if (otherFiles.length > 2)
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  _showAllOtherFiles = !_showAllOtherFiles;
+                                });
+                              },
+                              child: Text(
+                                _showAllOtherFiles ? 'Show Less' : 'View All',
+                                style: TextStyle(color: AppColors.primary),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    // Show other files based on view state
+                    ListView.separated(
+                      physics: NeverScrollableScrollPhysics(),
+                      shrinkWrap: true,
+                      itemCount: _showAllOtherFiles ? otherFiles.length : (otherFiles.length > 2 ? 2 : otherFiles.length),
+                      separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
+                      itemBuilder: (context, index) {
+                        final file = otherFiles[index];
+                        return _buildFileItem(file);
+                      },
+                    ),
+                    if (!_showAllOtherFiles && otherFiles.length > 2)
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingM, vertical: AppDimensions.spacingS),
+                        child: Text(
+                          '+${otherFiles.length - 2} more files',
+                          style: AppTextStyles.labelText,
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+          
+          // Add a button to upload new attachments
+          Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
+          InkWell(
+            onTap: () {
+              _selectAndUploadFile();
+            },
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingL),
+              child: Center(
+                child: Text(
+                  'Upload New File',
+                  style: AppTextStyles.actionText,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    ),
+  );
+}
+
+Widget _buildImagePreview(Map<String, dynamic> attachment) {
+  final String fileName = attachment['name'] ?? 'Unnamed File';
+  final String uploadDate = _formatDateTime(attachment['created_at'] ?? attachment['upload_date'] ?? attachment['created_date'] ?? '');
+  
+  String? rawImageUrl = attachment['url'] ?? attachment['file_path'] ?? attachment['path'];
+  String imageUrl = _buildImageUrl(rawImageUrl);
+  
+  return ListTile(
+    leading: ClipRRect(
+      borderRadius: BorderRadius.circular(AppDimensions.radiusS),
+      child: Container(
+        width: 40,
+        height: 40,
+        color: Colors.grey.shade200,
+        child: rawImageUrl != null
+          ? Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              width: 40,
+              height: 40,
+              errorBuilder: (context, error, stackTrace) {
+                return Icon(Icons.image, color: AppColors.primary);
+              },
+            )
+          : Icon(Icons.image, color: AppColors.primary),
+      ),
+    ),
+    title: InkWell(
+      onTap: () {
+        _viewImageInDialog(attachment);
+      },
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              fileName, 
+              style: AppTextStyles.bodyLarge.copyWith(
+                color: AppColors.primary,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+            ],
+          ),
+        ],
+      ),
+    ),
+    subtitle: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: AppDimensions.spacingXs),
+        Text(uploadDate, style: AppTextStyles.labelText),
+        if (attachment['owner'] != null)
+          Text('By: ${attachment['owner']}', style: AppTextStyles.labelText),
+      ],
+    ),
+  );
+}
+
+String _buildImageUrl(String? rawImageUrl) {
+  if (rawImageUrl == null || rawImageUrl.isEmpty) {
+    return '';
+  }
+  
+  String imageUrl = rawImageUrl;
+  if (rawImageUrl.startsWith('/')) {
+    imageUrl = 'https://qa.api.bussus.com/media$rawImageUrl';
+  } else if (!rawImageUrl.startsWith('http')) {
+    imageUrl = 'https://qa.api.bussus.com/media/$rawImageUrl';
+  }
+  
+  return imageUrl;
+}
+
+Widget _buildFileItem(Map<String, dynamic> attachment) {
+  final String fileName = attachment['name'] ?? 'Unnamed File';
+  final String uploadDate = _formatDateTime(attachment['created_at'] ?? attachment['upload_date'] ?? attachment['created_date'] ?? '');
+  final String fileType = attachment['type'] ?? '';
+  
+  IconData fileIcon = _getFileIcon(fileName, fileType);
+  
+  return ListTile(
+    leading: Icon(fileIcon, color: AppColors.primary, size: AppDimensions.iconL),
+    title: Row(
+      children: [
+        Expanded(
+          child: Text(fileName, style: AppTextStyles.bodyLarge),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(Icons.edit, color: AppColors.primary, size: 18),
+              onPressed: () {
+                _editFileName(attachment);
+              },
+              tooltip: 'Edit Name',
+            ),
+            IconButton(
+              icon: Icon(Icons.delete_outline, color: AppColors.primary, size: 18),
+              onPressed: () {
+                _confirmDeleteFile(attachment);
+              },
+              tooltip: 'Delete',
+            ),
+          ],
+        ),
+      ],
+    ),
+    subtitle: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: AppDimensions.spacingXs),
+        Text(uploadDate, style: AppTextStyles.labelText),
+        if (attachment['owner'] != null)
+          Text('By: ${attachment['owner']}', style: AppTextStyles.labelText),
+      ],
+    ),
+  );
+}
+
+void _viewImageInDialog(Map<String, dynamic> attachment) {
+  String? rawImageUrl = attachment['url'] ?? attachment['file_path'] ?? attachment['path'];
+  final String fileName = attachment['name'] ?? 'Image';
+  
+  if (rawImageUrl == null || rawImageUrl.isEmpty) {
+    AppSnackBar.showError(context, 'Image URL not available');
+    return;
+  }
+  
+  String imageUrl = _buildImageUrl(rawImageUrl);
+  
+  showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                fileName,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: Icon(Icons.edit, color: AppColors.primary),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _editFileName(attachment);
+                  },
+                  tooltip: 'Edit Name',
+                ),
+                IconButton(
+                  icon: Icon(Icons.delete_outline, color: AppColors.primary),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _confirmDeleteFile(attachment);
+                  },
+                  tooltip: 'Delete',
+                ),
+              ],
+            ),
+          ],
+        ),
+        contentPadding: EdgeInsets.zero,
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                constraints: BoxConstraints(
+                  maxHeight: 400,
+                ),
+                child: Center(
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.error_outline, color: Colors.red, size: 48),
+                            SizedBox(height: 10),
+                            Text(
+                              'Failed to load image',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            child: Text('Close'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+String _formatDateTime(String dateTimeStr) {
+  try {
+    if (dateTimeStr.isEmpty) return '';
+    
+    DateTime dateTime;
+    
+    // Handle different timestamp formats
+    if (dateTimeStr.contains('T')) {
+      // ISO format
+      dateTime = DateTime.parse(dateTimeStr);
+    } else if (dateTimeStr.contains(' ')) {
+      // Format like "2024-01-15 10:30:45"
+      dateTime = DateTime.parse(dateTimeStr);
+    } else if (RegExp(r'^\d+$').hasMatch(dateTimeStr)) {
+      // Unix timestamp (seconds)
+      dateTime = DateTime.fromMillisecondsSinceEpoch(int.parse(dateTimeStr) * 1000);
+    } else if (RegExp(r'^\d{13}$').hasMatch(dateTimeStr)) {
+      // Unix timestamp (milliseconds)
+      dateTime = DateTime.fromMillisecondsSinceEpoch(int.parse(dateTimeStr));
+    } else {
+      // Try parsing as is
+      dateTime = DateTime.parse(dateTimeStr);
+    }
+    
+    final DateTime now = DateTime.now();
+    final DateTime yesterday = now.subtract(Duration(days: 1));
+    
+    // Format for today
+    if (dateTime.year == now.year && dateTime.month == now.month && dateTime.day == now.day) {
+      return 'Today at ${_formatTime(dateTime)}';
+    }
+    // Format for yesterday
+    else if (dateTime.year == yesterday.year && dateTime.month == yesterday.month && dateTime.day == yesterday.day) {
+      return 'Yesterday at ${_formatTime(dateTime)}';
+    }
+    // Format for this year
+    else if (dateTime.year == now.year) {
+      return '${_getMonthName(dateTime.month)} ${dateTime.day} at ${_formatTime(dateTime)}';
+    }
+    // Format for other years
+    else {
+      return '${_getMonthName(dateTime.month)} ${dateTime.day}, ${dateTime.year} at ${_formatTime(dateTime)}';
+    }
+  } catch (e) {
+    print('Error parsing date: $dateTimeStr, Error: $e');
+    return dateTimeStr;
+  }
+}
+
+String _formatTime(DateTime dateTime) {
+  final int hour = dateTime.hour > 12 ? dateTime.hour - 12 : (dateTime.hour == 0 ? 12 : dateTime.hour);
+  final String minute = dateTime.minute.toString().padLeft(2, '0');
+  final String period = dateTime.hour >= 12 ? 'PM' : 'AM';
+  
+  return '$hour:$minute $period';
+}
+
+String _getMonthName(int month) {
+  const List<String> months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  
+  return months[month - 1];
+}
+
+IconData _getFileIcon(String fileName, String fileType) {
+  // First check the file type
+  if (fileType == 'image') {
+    return Icons.image;
+  } else if (fileType == 'document') {
+    return Icons.description;
+  } else if (fileType == 'spreadsheet') {
+    return Icons.table_chart;
+  } else if (fileType == 'presentation') {
+    return Icons.slideshow;
+  } else if (fileType == 'pdf') {
+    return Icons.picture_as_pdf;
+  } else if (fileType == 'audio') {
+    return Icons.audio_file;
+  } else if (fileType == 'video') {
+    return Icons.video_file;
+  }
+  
+  // If file type is not specific, check extension
+  final extension = fileName.split('.').last.toLowerCase();
+  
+  switch (extension) {
+    case 'pdf':
+      return Icons.picture_as_pdf;
+    case 'doc':
+    case 'docx':
+      return Icons.description;
+    case 'xls':
+    case 'xlsx':
+    case 'csv':
+      return Icons.table_chart;
+    case 'ppt':
+    case 'pptx':
+      return Icons.slideshow;
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'gif':
+    case 'webp':
+    case 'bmp':
+      return Icons.image;
+    case 'mp3':
+    case 'wav':
+    case 'ogg':
+      return Icons.audio_file;
+    case 'mp4':
+    case 'mov':
+    case 'avi':
+    case 'mkv':
+      return Icons.video_file;
+    case 'zip':
+    case 'rar':
+    case '7z':
+      return Icons.folder_zip;
+    case 'txt':
+      return Icons.text_snippet;
+    default:
+      return Icons.insert_drive_file;
+  }
+}
+
+void _editFileName(Map<String, dynamic> attachment) {
   final String fileId = attachment['id'] ?? '';
   final String currentName = attachment['name'] ?? '';
   
@@ -270,578 +1043,6 @@ Future<void> _updateFileName(String fileId, String newName) async {
     print('❌ Error updating file name: $e');
     AppSnackBar.showError(context, 'Error updating file name: $e', customDuration: Duration(seconds: 3));
   }
-}
-  
-
- @override
-Widget build(BuildContext context) {
-  return Scaffold(
-    appBar: PreferredSize(
-      preferredSize: Size.fromHeight(AppDimensions.appBarHeight),
-      child: AppBar(
-        title: Text(
-          "${widget.type.substring(0, 1).toUpperCase()}${widget.type.substring(1)} Details",
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {}
-          ),
-          IconButton(
-            icon: const Icon(Icons.notifications),
-            onPressed: () {}
-          ),
-        ],
-      ),
-    ),
-    backgroundColor: AppColors.background,
-    body: _isLoading
-        ? const Center(child: CircularProgressIndicator())
-        : _error != null
-        ? Center(child: Text(_error!, style: AppTextStyles.bodyMedium))
-        : SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeaderInfo(),
-                // Use consistent container for all sections
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: AppDimensions.spacingL, 
-                    vertical: AppDimensions.spacingS
-                  ),
-                  child: Column(
-                    children: [
-                      // Layout sections with consistent styling
-                      ..._layoutSections.isNotEmpty
-                          ? _layoutSections.map((section) {
-                              return _buildExpandableSection(section);
-                            }).toList()
-                          : [_buildExpandableDefaultSection()],
-                      // Activities section with consistent styling
-                      _buildActivitiesSection(),
-                      _buildRelatedSection(),
-                      _buildAttachmentsSection(),
-                      _buildHistorySection(),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-    bottomNavigationBar: _buildBottomNavBar(),
-  );
-}
-
-  Widget _buildRelatedSection() {
-  return Card(
-    margin: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
-    child: Column(
-      children: [
-        // Header with expand/collapse functionality
-        InkWell(
-          onTap: () {
-            setState(() {
-              _relatedSectionExpanded = !_relatedSectionExpanded;
-            });
-          },
-          child: Padding(
-            padding: EdgeInsets.all(AppDimensions.spacingL),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Related Items',
-                      style: AppTextStyles.cardTitle,
-                    ),
-                    SizedBox(width: AppDimensions.spacingS),
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: AppDimensions.spacingS, 
-                        vertical: AppDimensions.spacingXs
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.statusBadgeBg,
-                        borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
-                      ),
-                      child: Text(
-                        '${_relatedData.keys.length}',
-                        style: TextStyle(
-                          color: AppColors.statusBadgeText,
-                          fontWeight: FontWeight.bold,
-                          fontSize: AppDimensions.textS,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Icon(
-                  _relatedSectionExpanded 
-                      ? Icons.keyboard_arrow_up 
-                      : Icons.keyboard_arrow_down,
-                  color: AppColors.primary,
-                  size: AppDimensions.iconL,
-                ),
-              ],
-            ),
-          ),
-        ),
-        
-        // Content - only visible when expanded
-        if (_relatedSectionExpanded) ...[
-          Divider(height: 1),
-          if (_relatedData.isEmpty) 
-            Padding(
-              padding: EdgeInsets.all(AppDimensions.spacingL),
-              child: Text(
-                'No related items found',
-                style: AppTextStyles.secondaryText,
-              ),
-            )
-          else
-            Column(
-              children: _relatedData.entries.map((entry) {
-                final String relationType = entry.key;
-                final List<dynamic> items = entry.value is List ? entry.value : [];
-                
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: EdgeInsets.all(AppDimensions.spacingL),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _formatRelationType(relationType),
-                            style: AppTextStyles.subheading,
-                          ),
-                          SizedBox(height: AppDimensions.spacingM),
-                          if (items.isEmpty)
-                            Text(
-                              'No ${_formatRelationType(relationType).toLowerCase()} found',
-                              style: AppTextStyles.secondaryText,
-                            )
-                          else
-                            Column(
-                              children: items.map((item) => _buildRelatedItem(item, relationType)).toList(),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (entry.key != _relatedData.keys.last)
-                      Divider(height: 1),
-                  ],
-                );
-              }).toList(),
-            ),
-        ],
-      ],
-    ),
-  );
-}
-
-
-String _formatRelationType(String type) {
-  // Convert snake_case to Title Case
-  return type
-      .split('_')
-      .map((word) => word.isNotEmpty 
-          ? '${word[0].toUpperCase()}${word.substring(1)}' 
-          : '')
-      .join(' ');
-}
-
-Widget _buildRelatedItem(Map<String, dynamic> item, String relationType) {
-  return ListTile(
-    contentPadding: EdgeInsets.zero,
-    title: Text(
-      item['name'] ?? 'Unnamed Item',
-      style: AppTextStyles.bodyLarge,
-    ),
-    trailing: Icon(Icons.chevron_right, color: AppColors.primary),
-    onTap: () {
-      // Navigate to the details screen for this item
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => DetailsScreen(
-            type: relationType.contains('_') ? relationType.split('_').last : relationType,
-            itemId: item['id'],
-          ),
-        ),
-      );
-    },
-  );
-}
-Widget _buildAttachmentsSection() {
-  return Card(
-    margin: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
-    child: Column(
-      children: [
-        // Header with expand/collapse functionality
-        InkWell(
-          onTap: () {
-            setState(() {
-              _attachmentsSectionExpanded = !_attachmentsSectionExpanded;
-            });
-          },
-          child: Padding(
-            padding: EdgeInsets.all(AppDimensions.spacingL),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Files',
-                      style: AppTextStyles.cardTitle,
-                    ),
-                    SizedBox(width: AppDimensions.spacingS),
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: AppDimensions.spacingS, 
-                        vertical: AppDimensions.spacingXs
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.statusBadgeBg,
-                        borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
-                      ),
-                      child: Text(
-                        '${_attachments.length}',
-                        style: TextStyle(
-                          color: AppColors.statusBadgeText,
-                          fontWeight: FontWeight.bold,
-                          fontSize: AppDimensions.textS,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Icon(
-                  _attachmentsSectionExpanded 
-                      ? Icons.keyboard_arrow_up 
-                      : Icons.keyboard_arrow_down,
-                  color: AppColors.primary,
-                  size: AppDimensions.iconL,
-                ),
-              ],
-            ),
-          ),
-        ),
-        
-        // Content - only visible when expanded
-        if (_attachmentsSectionExpanded) ...[
-          Divider(height: 1),
-          _attachments.isEmpty
-            ? Padding(
-                padding: EdgeInsets.all(AppDimensions.spacingL),
-                child: Text(
-                  'No files attached',
-                  style: AppTextStyles.secondaryText,
-                ),
-              )
-            : ListView.separated(
-                physics: NeverScrollableScrollPhysics(),
-                shrinkWrap: true,
-                itemCount: _attachments.length,
-                separatorBuilder: (context, index) => Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final attachment = _attachments[index];
-                  return _buildAttachmentItem(attachment);
-                },
-              ),
-          
-          // Add a button to upload new attachments
-          Divider(height: 1),
-          InkWell(
-            onTap: () {
-              _selectAndUploadFile();
-            },
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingL),
-              child: Center(
-                child: Text(
-                  'Upload New File',
-                  style: AppTextStyles.actionText,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
-    ),
-  );
-}
-
-Widget _buildAttachmentItem(Map<String, dynamic> attachment) {
-  final String fileName = attachment['name'] ?? 'Unnamed File';
-  final String uploadDate = _formatDateTime(attachment['created_date'] ?? '');
-  final String fileType = attachment['type'] ?? '';
-  final String fileId = attachment['id'] ?? '';
-  
-  // Determine file type icon
-  IconData fileIcon = _getFileIcon(fileName, fileType);
-  
-  // Check if it's an image
-  bool isImage = fileType == 'image' || 
-      ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].contains(fileName.split('.').last.toLowerCase());
-  
-  return ListTile(
-    leading: isImage 
-        ? ClipRRect(
-            borderRadius: BorderRadius.circular(AppDimensions.radiusS),
-            child: Container(
-              width: 40,
-              height: 40,
-              color: Colors.grey.shade200,
-              child: attachment['url'] != null
-                ? Image.network(
-                    attachment['url'],
-                    fit: BoxFit.cover,
-                    width: 40,
-                    height: 40,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Icon(fileIcon, color: AppColors.primary);
-                    },
-                  )
-                : Icon(fileIcon, color: AppColors.primary),
-            ),
-          )
-        : Icon(fileIcon, color: AppColors.primary, size: AppDimensions.iconL),
-    title: Text(fileName, style: AppTextStyles.bodyLarge),
-    subtitle: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(height: AppDimensions.spacingXs),
-        Text(uploadDate, style: AppTextStyles.labelText),
-        if (attachment['owner'] != null)
-          Text('By: ${attachment['owner']}', style: AppTextStyles.labelText),
-      ],
-    ),
-    trailing: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // View button for images, only shown if it's an image
-        if (isImage)
-          IconButton(
-            icon: Icon(Icons.visibility, color: AppColors.primary),
-            onPressed: () {
-              _viewImage(attachment);
-            },
-            tooltip: 'View',
-          ),
-        // Edit file name button
-        IconButton(
-          icon: Icon(Icons.edit, color: AppColors.primary),
-          onPressed: () {
-            _editFileName(attachment);
-          },
-          tooltip: 'Edit Name',
-        ),
-        // Delete button
-        IconButton(
-          icon: Icon(Icons.delete_outline, color: AppColors.primary), // Changed color to match other icons
-          onPressed: () {
-            _confirmDeleteFile(attachment);
-          },
-          tooltip: 'Delete',
-        ),
-      ],
-    ),
-  );
-}
-void _viewImage(Map<String, dynamic> attachment) {
-  // Look for the URL in different possible fields
-  String? rawImageUrl = attachment['url'] ?? attachment['file_path'] ?? attachment['path'];
-  final String fileName = attachment['name'] ?? 'Image';
-  
-  if (rawImageUrl == null || rawImageUrl.isEmpty) {
-    AppSnackBar.showError(context, 'Image URL not available');
-    return;
-  }
-  
-  // Fix the URL by adding the base URL if it's a relative path
-  String imageUrl = rawImageUrl;
-  if (rawImageUrl.startsWith('/')) {
-    // This is a relative URL, add the base URL
-    imageUrl = 'https://qa.api.bussus.com/media$rawImageUrl';
-  } else if (!rawImageUrl.startsWith('http')) {
-    // If it's not an absolute URL (doesn't start with http or https)
-    imageUrl = 'https://qa.api.bussus.com/media/$rawImageUrl';
-  }
-  
-  // Print URL for debugging
-  print('Original URL: $rawImageUrl');
-  print('Loading image from complete URL: $imageUrl');
-  
-  // Use a much simpler dialog to avoid layout issues
-  showDialog(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        title: Text(fileName),
-        contentPadding: EdgeInsets.zero,
-        content: SizedBox(
-          width: double.maxFinite, // Important to prevent layout issues
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                constraints: BoxConstraints(
-                  maxHeight: 300, // Fixed height to avoid layout issues
-                ),
-                child: Center(
-                  child: Image.network(
-                    imageUrl,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      print('Image error: $error');
-                      return Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.error_outline, color: Colors.red, size: 48),
-                            SizedBox(height: 10),
-                            Text(
-                              'Failed to load image\n$error',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.red),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            child: Text('Close'),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
-      );
-    },
-  );
-}
-
-IconData _getFileIcon(String fileName, String fileType) {
-  // First check the file type
-  if (fileType == 'image') {
-    return Icons.image;
-  } else if (fileType == 'document') {
-    return Icons.description;
-  } else if (fileType == 'spreadsheet') {
-    return Icons.table_chart;
-  } else if (fileType == 'presentation') {
-    return Icons.slideshow;
-  } else if (fileType == 'pdf') {
-    return Icons.picture_as_pdf;
-  } else if (fileType == 'audio') {
-    return Icons.audio_file;
-  } else if (fileType == 'video') {
-    return Icons.video_file;
-  }
-  
-  // If file type is not specific, check extension
-  final extension = fileName.split('.').last.toLowerCase();
-  
-  switch (extension) {
-    case 'pdf':
-      return Icons.picture_as_pdf;
-    case 'doc':
-    case 'docx':
-      return Icons.description;
-    case 'xls':
-    case 'xlsx':
-    case 'csv':
-      return Icons.table_chart;
-    case 'ppt':
-    case 'pptx':
-      return Icons.slideshow;
-    case 'jpg':
-    case 'jpeg':
-    case 'png':
-    case 'gif':
-    case 'webp':
-    case 'bmp':
-      return Icons.image;
-    case 'mp3':
-    case 'wav':
-    case 'ogg':
-      return Icons.audio_file;
-    case 'mp4':
-    case 'mov':
-    case 'avi':
-    case 'mkv':
-      return Icons.video_file;
-    case 'zip':
-    case 'rar':
-    case '7z':
-      return Icons.folder_zip;
-    case 'txt':
-      return Icons.text_snippet;
-    default:
-      return Icons.insert_drive_file;
-  }
-}
-
-String _formatDateTime(String dateTimeStr) {
-  try {
-    if (dateTimeStr.isEmpty) return '';
-    
-    final DateTime dateTime = DateTime.parse(dateTimeStr);
-    final DateTime now = DateTime.now();
-    final DateTime yesterday = now.subtract(Duration(days: 1));
-    
-    // Format for today
-    if (dateTime.year == now.year && dateTime.month == now.month && dateTime.day == now.day) {
-      return 'Today at ${_formatTime(dateTime)}';
-    }
-    // Format for yesterday
-    else if (dateTime.year == yesterday.year && dateTime.month == yesterday.month && dateTime.day == yesterday.day) {
-      return 'Yesterday at ${_formatTime(dateTime)}';
-    }
-    // Format for this year
-    else if (dateTime.year == now.year) {
-      return '${_getMonthName(dateTime.month)} ${dateTime.day} at ${_formatTime(dateTime)}';
-    }
-    // Format for other years
-    else {
-      return '${_getMonthName(dateTime.month)} ${dateTime.day}, ${dateTime.year} at ${_formatTime(dateTime)}';
-    }
-  } catch (e) {
-    return dateTimeStr;
-  }
-}
-
-String _formatTime(DateTime dateTime) {
-  final int hour = dateTime.hour > 12 ? dateTime.hour - 12 : (dateTime.hour == 0 ? 12 : dateTime.hour);
-  final String minute = dateTime.minute.toString().padLeft(2, '0');
-  final String period = dateTime.hour >= 12 ? 'PM' : 'AM';
-  
-  return '$hour:$minute $period';
-}
-
-String _getMonthName(int month) {
-  const List<String> months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-  ];
-  
-  return months[month - 1];
 }
 
 // First, add the missing _inspectAttachment method
@@ -991,7 +1192,7 @@ Future<void> _selectAndUploadFile() async {
 }
 Widget _buildHistorySection() {
   return Card(
-    margin: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
+    margin: EdgeInsets.symmetric(vertical: AppDimensions.spacingXs),
     child: Column(
       children: [
         // Header with expand/collapse functionality
@@ -1002,7 +1203,7 @@ Widget _buildHistorySection() {
             });
           },
           child: Padding(
-            padding: EdgeInsets.all(AppDimensions.spacingL),
+            padding: EdgeInsets.all(AppDimensions.spacingM),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1047,10 +1248,10 @@ Widget _buildHistorySection() {
         
         // Content - only visible when expanded
         if (_historySectionExpanded) ...[
-          Divider(height: 1),
+          Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
           _history.isEmpty
             ? Padding(
-                padding: EdgeInsets.all(AppDimensions.spacingL),
+                padding: EdgeInsets.all(AppDimensions.spacingM),
                 child: Text(
                   'No history records found',
                   style: AppTextStyles.secondaryText,
@@ -1060,7 +1261,7 @@ Widget _buildHistorySection() {
                 physics: NeverScrollableScrollPhysics(),
                 shrinkWrap: true,
                 itemCount: _history.length,
-                separatorBuilder: (context, index) => Divider(height: 1),
+                separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
                 itemBuilder: (context, index) {
                   final historyItem = _history[index];
                   return _buildHistoryItem(historyItem);
@@ -1159,6 +1360,7 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
                 Icons.edit,
                 'Edit',
                 () async {
+                  print('📝 Navigating to edit screen...');
                   final result = await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -1168,8 +1370,16 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
                       ),
                     ),
                   );
+                  
+                  print('📝 Edit screen returned with result: $result');
+                  
                   if (result == true) {
-                    Navigator.pop(context, true); // Refresh the list screen
+                    print('📝 Edit was successful, refreshing details...');
+                    // Reload the details to show updated data
+                    await _loadDetails();
+                    
+                    // Show success message
+                    AppSnackBar.showSuccess(context, 'Item updated successfully');
                   }
                 },
               ),
@@ -1300,7 +1510,7 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
     final isExpanded = _expandedSections[title] ?? false;
 
     return Card(
-      margin: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
+      margin: EdgeInsets.symmetric(vertical: AppDimensions.spacingXs),
       child: Column(
         children: [
           // Clickable header with arrow
@@ -1311,7 +1521,7 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
               });
             },
             child: Padding(
-              padding: EdgeInsets.all(AppDimensions.spacingL),
+              padding: EdgeInsets.all(AppDimensions.spacingM),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1331,9 +1541,9 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
           
           // Expandable content
           if (isExpanded) ...[
-            const Divider(height: 1),
+            Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
             Padding(
-              padding: EdgeInsets.all(AppDimensions.spacingL),
+              padding: EdgeInsets.all(AppDimensions.spacingM),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1344,10 +1554,11 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
                       children: [
                         _infoItem(
                             _getFieldLabel(fieldName),
-                            _formatValue(_details[fieldName]),
+                            // ✅ CHANGED: Use DynamicModel to get display value
+                            _formatValue(_dynamicModel?.getDisplayValue(fieldName, defaultValue: '') ?? _details[fieldName]),
                             _isFieldRequired(fieldName)
                         ),
-                        const Divider(),
+                        Divider(color: Colors.grey.shade800, thickness: 0.5),
                       ],
                     );
                   }),
@@ -1375,7 +1586,7 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
               });
             },
             child: Padding(
-              padding: EdgeInsets.all(AppDimensions.spacingL),
+              padding: EdgeInsets.all(AppDimensions.spacingM),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1395,9 +1606,9 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
           
           // Expandable content
           if (isExpanded) ...[
-            const Divider(height: 1),
+            Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
             Padding(
-              padding: EdgeInsets.all(AppDimensions.spacingL),
+              padding: EdgeInsets.all(AppDimensions.spacingM),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1410,10 +1621,11 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
                       children: [
                         _infoItem(
                             _getFieldLabel(entry.key),
-                            _formatValue(entry.value),
+                            // ✅ CHANGED: Use DynamicModel to get display value
+                            _formatValue(_dynamicModel?.getDisplayValue(entry.key, defaultValue: '') ?? entry.value),
                             _isFieldRequired(entry.key)
                         ),
-                        const Divider(),
+                        Divider(color: Colors.grey.shade800, thickness: 0.5),
                       ],
                     );
                   }),
@@ -1468,7 +1680,7 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
   // And add a new state variable _showAllActivities to control showing all tasks
   
   return Card(
-    margin: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
+    margin: EdgeInsets.symmetric(vertical: AppDimensions.spacingXs),
     child: Column(
       children: [
         // Header with expand/collapse functionality
@@ -1483,7 +1695,7 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
             });
           },
           child: Padding(
-            padding: EdgeInsets.all(AppDimensions.spacingL),
+            padding: EdgeInsets.all(AppDimensions.spacingM),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1528,17 +1740,17 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
         
         // Activities list - only visible when expanded, limited to 2 items unless showAll is true
         if (_activitiesSectionExpanded) ...[
-          Divider(height: 1),
+          Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
           _isLoadingActivities
               ? Center(
                   child: Padding(
-                    padding: EdgeInsets.all(AppDimensions.spacingL),
+                    padding: EdgeInsets.all(AppDimensions.spacingM),
                     child: CircularProgressIndicator(),
                   ),
                 )
               : _activities.isEmpty
                   ? Padding(
-                      padding: EdgeInsets.all(AppDimensions.spacingL),
+                      padding: EdgeInsets.all(AppDimensions.spacingM),
                       child: Text(
                         'No activities found',
                         style: AppTextStyles.secondaryText,
@@ -1551,7 +1763,7 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
                           shrinkWrap: true,
                           // Show all items if _showAllActivities is true, otherwise show just 2
                           itemCount: _showAllActivities ? _activities.length : (_activities.length > 2 ? 2 : _activities.length),
-                          separatorBuilder: (context, index) => Divider(height: 1),
+                          separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
                           itemBuilder: (context, index) {
                             final activity = _activities[index];
                             return _buildActivityItem(activity);
@@ -1560,7 +1772,7 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
                         
                         // Add "View All" button if there are more than 2 activities and not showing all yet
                         if (_activities.length > 2 && !_showAllActivities) ...[
-                          Divider(height: 1),
+                          Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
                           InkWell(
                             onTap: () {
                               // Instead of navigating, we'll set state to show all activities
@@ -1583,7 +1795,7 @@ Widget _buildHistoryItem(Map<String, dynamic> historyItem) {
                         
                         // Add "Show Less" button when showing all activities
                         if (_showAllActivities && _activities.length > 2) ...[
-                          Divider(height: 1),
+                          Divider(height: 1, color: Colors.grey.shade800, thickness: 0.5),
                           InkWell(
                             onTap: () {
                               setState(() {
@@ -1710,21 +1922,47 @@ Widget _buildActivityItem(Map<String, dynamic> activity) {
     }
   }
   
-  Widget _buildBottomNavBar() {
-    return BottomNavigationBar(
-      type: BottomNavigationBarType.fixed,
-      items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.favorite), label: "Label"),
-        BottomNavigationBarItem(icon: Icon(Icons.shopping_cart), label: "Leads"),
-        BottomNavigationBarItem(icon: Icon(Icons.receipt), label: "Invoices"),
-        BottomNavigationBarItem(icon: Icon(Icons.menu), label: "Menu"),
-      ],
-      currentIndex: 1,
-      selectedItemColor: AppColors.primary,
-      backgroundColor: AppColors.cardBackground,
-      elevation: AppDimensions.elevationXl,
-    );
-  }
+Widget _buildBottomNavBar() {
+  return BottomNavigationBar(
+    type: BottomNavigationBarType.fixed,
+    items: [
+      BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
+      BottomNavigationBarItem(
+        icon: Icon(Icons.business),
+        label: widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)
+      ),
+      BottomNavigationBarItem(icon: Icon(Icons.menu), label: "Menu"),
+    ],
+    currentIndex: 1,
+    selectedItemColor: AppColors.primary,
+    backgroundColor: AppColors.cardBackground,
+    elevation: AppDimensions.elevationXl,
+    onTap: (index) {
+      switch (index) {
+        case 0: // Home
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (context) => MainLayout(initialIndex: 0)
+            ),
+            (route) => false,
+          );
+          break;
+        case 1: // Current page (Details) - do nothing
+          break;
+        case 2: // Menu
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (context) => MainLayout(initialIndex: 2)
+            ),
+            (route) => false,
+          );
+          break;
+      }
+    },
+  );
+}
 }
 
 // Extension to capitalize the first letter of a string

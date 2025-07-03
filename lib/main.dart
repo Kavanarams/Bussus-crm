@@ -1,4 +1,5 @@
 // lib/main.dart
+import 'package:bussus_crm/providers/app_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +11,9 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'theme/app_text_styles.dart';
 import 'theme/app_dimensions.dart';
+import 'providers/tabs_provider.dart';
+import 'screens/webview_screen.dart';
+
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +35,9 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => DataProvider()),
         ChangeNotifierProvider(create: (_) => DashboardProvider()),
+        ChangeNotifierProvider(create: (_) => TabsProvider()),
+        ChangeNotifierProvider(create: (_) => AppsProvider()),
+
       ],
       child: Consumer<AuthProvider>(
         builder: (ctx, auth, _) {
@@ -60,6 +67,7 @@ class MyApp extends StatelessWidget {
             routes: {
               '/login': (ctx) => LoginScreen(),
               '/home': (ctx) => MainLayout(initialIndex: 0),
+              '/webview': (ctx) => const InAppWebViewScreen(),
             },
           );
         },

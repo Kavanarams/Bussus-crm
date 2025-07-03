@@ -26,14 +26,11 @@ class ListScreen extends StatefulWidget {
 }
 
 class _ListScreenState extends State<ListScreen> {
-  final bool _isInitialized = false;
   bool _isLoading = true;
   bool _isScrolledToBottom = false;
 
   // Filter and sort state
   final Map<String, TextEditingController> _filterControllers = {};
-  String? _activeSortColumn;
-  final bool _sortAscending = true;
   final Map<String, String> _columnLabels = {};
 
   // Search state variables
@@ -60,16 +57,18 @@ class _ListScreenState extends State<ListScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _searchFocusNode.requestFocus();
         });
+      } else {
+        // When exiting search mode, reload the original data
+        _loadData();
       }
     });
   }
 
   void _handleSearchTextChanged(String query) {
-    // If the search text is empty and backspace was pressed, exit search mode
-    if (query.isEmpty && _searchController.text.isEmpty) {
-      _toggleSearchMode();
-      // Also reload the original data
-      _loadData();
+    // If the search text is empty, reload original data
+    if (query.isEmpty) {
+      if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+      _loadData(); // Load original data immediately when search is cleared
       return;
     }
 
@@ -80,40 +79,48 @@ class _ListScreenState extends State<ListScreen> {
     });
   }
 
-  // Modify your _performSearch method
-  void _performSearch(String query) async {
-    if (query.isEmpty) {
-      // If query is empty, reload all data
-      _loadData();
-      return;
+  Future<void> _performSearch(String query) async {
+  if (query.isEmpty) {
+    // If query is empty, reload all data
+    _loadData();
+    return;
+  }
+
+  if (!mounted) return;
+
+  setState(() {
+    _isLoading = true;
+  });
+
+  try {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final dataProvider = Provider.of<DataProvider>(context, listen: false);
+
+    print('🔍 Performing search for: "$query"');
+    await dataProvider.searchData(widget.type, query, authProvider.token);
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+      
+      // Debug: Check if we have results
+      print('🔍 Search completed. Items found: ${dataProvider.items.length}');
+      if (dataProvider.items.isEmpty) {
+        print('⚠️ No items found for search query: "$query"');
+      }
     }
-
-    if (!mounted) return;
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final dataProvider = Provider.of<DataProvider>(context, listen: false);
-
-      await dataProvider.searchData(widget.type, query, authProvider.token);
-
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      print('❌ Error searching data: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+  } catch (e) {
+    print('❌ Error searching data: $e');
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+      // Show error to user
+      AppSnackBar.showError(context, 'Search failed. Please try again.');
     }
   }
+}
 
   void _updateColumnLabels(List<ColumnInfo> allColumns) {
     _columnLabels.clear();
@@ -134,265 +141,204 @@ class _ListScreenState extends State<ListScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.type != widget.type) {
       print('📋 Type changed from ${oldWidget.type} to ${widget.type}');
+      // Exit search mode when type changes
+      if (isSearchMode) {
+        setState(() {
+          isSearchMode = false;
+          _searchController.clear();
+        });
+      }
       _loadData();
     }
   }
 
-  // Modify your _loadData method to ensure it doesn't trigger setState during build:
-  Future<void> _loadData() async {
-    // Don't set state if we're in the middle of building
-    if (!mounted) return;
+ Future<void> _loadData() async {
+  if (!mounted) return;
+  
+  print('📋 Loading data for type: ${widget.type}');
+  
+  setState(() {
+    _isLoading = true;
+  });
 
-    setState(() {
-      _isLoading = true;
-    });
+  try {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final dataProvider = Provider.of<DataProvider>(context, listen: false);
+    
+    // Load the data - this will reset all filters and sorts
+    await dataProvider.loadData(widget.type, authProvider.token);
+    
+    print('📊 Data loaded successfully. Items: ${dataProvider.items.length}');
 
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final dataProvider = Provider.of<DataProvider>(context, listen: false);
-
-      // Schedule this after the current build cycle
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        await dataProvider.loadData(widget.type, authProvider.token);
-
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
       });
-    } catch (e) {
-      print('❌ Error loading data: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+    }
+  } catch (e) {
+    print('❌ Error loading data: $e');
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+      AppSnackBar.showError(context, 'Failed to load data. Please try again.');
     }
   }
+}
 
   void _openSortPage() async {
-    // Navigate to sort page and wait for result
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => SortPage(type: widget.type),
-      ),
-    );
-    
-    // Handle the result
-    if (result == true) {
-      // Sort settings were changed
-      print('🔀 Returning from SortPage with changes');
-      
-      // No need to reload data - the provider's sorting is already applied
-      // Just refresh the UI by calling setState
-      setState(() {});
-      
-      // Show a confirmation snackbar if you want
-      AppSnackBar.showSuccess(context, 'Sorting applied');
+  final result = await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => SortPage(type: widget.type),
+    ),
+  );
+  
+  if (result == true) {
+    print('🔀 Sort settings changed, refreshing UI');
+    if (mounted) {
+      setState(() {
+        // Just refresh UI - don't reload data
+      });
     }
+    AppSnackBar.showSuccess(context, 'Sorting applied');
   }
+}
 
   void _showFilterPage(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => filter.FilterPage(
-          type: widget.type,
-        ),
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (context) => filter.FilterPage(
+        type: widget.type,
       ),
-    ).then((filtersApplied) {
-      if (filtersApplied == true) {
-        // Force refresh if filters were applied or cleared
+    ),
+  ).then((filtersApplied) {
+    if (filtersApplied == true) {
+      print('🔍 Filters were applied, refreshing UI');
+      // The DataProvider should already have the filtered data
+      // Just refresh the UI
+      if (mounted) {
         setState(() {
-          _isLoading = true;
+          // No need to set _isLoading = true as data is already loaded
         });
-        
-        // Make sure the data is reloaded
-        _loadData();
       }
-    });
-  }
+    }
+  });
+}
  
-  void _showSortDialog(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => SortPage(
-          type: widget.type,
-        ),
+ void _showSortDialog(BuildContext context) {
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (context) => SortPage(
+        type: widget.type,
       ),
-    ).then((sortApplied) {
-      if (sortApplied == true) {
-        // Force refresh if sort was applied or cleared
+    ),
+  ).then((sortApplied) {
+    if (sortApplied == true) {
+      print('🔀 Sort was applied, refreshing UI');
+      // The DataProvider should already have the sorted data
+      // Just refresh the UI
+      if (mounted) {
         setState(() {
-          _isLoading = true;
+          // No need to reload data, just refresh UI
         });
-        
-        // Reload data explicitly
-        _loadData();
       }
-    });
-  }
+    }
+  });
+}
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        // Conditional app bar content
-        title: isSearchMode
-            ? TextField(
-          controller: _searchController,
-          focusNode: _searchFocusNode,
-          style: TextStyle(color: AppColors.textWhite),
-          decoration: InputDecoration(
-            hintText: 'Search...',
-            hintStyle: TextStyle(color: const Color.fromARGB(179, 13, 13, 13)),
-            border: InputBorder.none,
+@override
+Widget build(BuildContext context) {
+  return Scaffold(
+    backgroundColor: AppColors.background,
+    appBar: AppBar(
+      // Conditional app bar content
+      title: isSearchMode
+          ? TextField(
+        controller: _searchController,
+        focusNode: _searchFocusNode,
+        style: TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 16,
+        ),
+        decoration: InputDecoration(
+          hintText: 'Search...',
+          hintStyle: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 16,
           ),
-          onChanged: _handleSearchTextChanged,
-        )
-            : Text(
-          'List View',
-          style: AppTextStyles.appBarTitle,
+          border: InputBorder.none,
         ),
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back),
-          onPressed: () {
-            if (isSearchMode) {
-              _toggleSearchMode();
-              _loadData(); // Reload original data
-            } else {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => MainLayout(initialIndex: 3),
-                ),
-              );
-            }
-          },
-        ),
-        actions: [
-          if (!isSearchMode) ...[
-            IconButton(
-              icon: Icon(Icons.refresh),
-              onPressed: () {
-                _loadData();
-              },
-            ),
-            IconButton(
-              icon: Icon(Icons.search),
-              onPressed: _toggleSearchMode,
-            ),
-            IconButton(
-              icon: Icon(Icons.notifications),
-              onPressed: () {
-                // Notifications functionality
-              },
-            ),
-          ],
-          if (isSearchMode) ...[
-            IconButton(
-              icon: Icon(Icons.close),
-              onPressed: () {
-                _searchController.clear();
-                _handleSearchTextChanged('');
-              },
-            ),
-          ],
-        ],
-      ),
-      body: _isLoading
-          ? Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: AppDimensions.spacingL),
-            Text('Loading data...', style: AppTextStyles.bodyMedium),
-          ],
-        ),
+        onChanged: _handleSearchTextChanged,
       )
-          : Consumer<DataProvider>(
-        builder: (ctx, dataProvider, _) {
-          // Debug prints
-          print('📋 Building list view. isLoading: ${dataProvider.isLoading}');
-          print('📋 Error: ${dataProvider.error}');
-          print('📋 Items count: ${dataProvider.items.length}');
-
-          if (dataProvider.isLoading) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: AppDimensions.spacingL),
-                  Text('Loading data...', style: AppTextStyles.bodyMedium),
-                ],
+          : Text(
+        'List View',
+        style: AppTextStyles.appBarTitle,
+      ),
+      leading: IconButton(
+        icon: Icon(Icons.arrow_back),
+        onPressed: () {
+          if (isSearchMode) {
+            _toggleSearchMode();
+          } else {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => MainLayout(initialIndex: 2),
               ),
             );
           }
-
-          if (dataProvider.error != null) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.error_outline, color: AppColors.error, size: 48),
-                  SizedBox(height: AppDimensions.spacingL),
-                  Text(
-                    dataProvider.error!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.error),
-                  ),
-                  SizedBox(height: AppDimensions.spacingL),
-                  ElevatedButton(
-                    onPressed: () {
-                      _loadData();
-                    },
-                    child: Text('Retry'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final items = dataProvider.items;
-          if (items.isEmpty) {
-            return Center(child: Text('No data available', style: AppTextStyles.bodyMedium));
-          }
-
-          final visibleColumns = dataProvider.visibleColumns;
-          // Limit visible columns to first 3 if there are more than 3
-          final limitedVisibleColumns = visibleColumns.length > 3
-              ? visibleColumns.sublist(0, 3)
-              : visibleColumns;
-
-          final allColumns = dataProvider.allColumns;
-          
-          // Update column labels mapping
-          _updateColumnLabels(allColumns);
-
-          print('📋 Visible columns: $visibleColumns');
-          print('📋 Limited visible columns: $limitedVisibleColumns');
-          print('📋 All columns count: ${allColumns.length}');
-
-          return Column(
-            children: [
-              // Filter, Sort, New bar - reduced vertical height and spacing
-              Container(
-                width: double.infinity,
-                color: AppColors.cardBackground,
-                padding: EdgeInsets.symmetric(
-                  vertical: AppDimensions.spacingS,
-                  horizontal: AppDimensions.spacingXxl
-                ),
-                child: Row(
+        },
+      ),
+      actions: [
+        if (!isSearchMode) ...[
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: () {
+              _loadData();
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.search),
+            onPressed: _toggleSearchMode,
+          ),
+          IconButton(
+            icon: Icon(Icons.notifications),
+            onPressed: () {
+              // Notifications functionality
+            },
+          ),
+        ],
+        if (isSearchMode) ...[
+          IconButton(
+            icon: Icon(Icons.close),
+            onPressed: () {
+              _searchController.clear();
+              _toggleSearchMode();
+            },
+          ),
+        ],
+      ],
+    ),
+    body: Column(
+      children: [
+        // ALWAYS VISIBLE Filter, Sort, New bar - moved outside Consumer
+        if (!isSearchMode)
+          Container(
+            width: double.infinity,
+            color: AppColors.cardBackground,
+            padding: EdgeInsets.symmetric(
+              vertical: AppDimensions.spacingS,
+              horizontal: AppDimensions.spacingXxl
+            ),
+            child: Consumer<DataProvider>(
+              builder: (context, dataProvider, child) {
+                return Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    // Filter icon with label below - using filled filter icon
+                    // Filter icon with label below
                     GestureDetector(
-                      onTap: () =>  _showFilterPage(context),
+                      onTap: () => _showFilterPage(context),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -513,127 +459,224 @@ class _ListScreenState extends State<ListScreen> {
                       ),
                     ),
                   ],
-                ),
-              ),
+                );
+              },
+            ),
+          ),
+        
+        // Rest of the content in Expanded widget
+        Expanded(
+          child: Consumer<DataProvider>(
+            builder: (ctx, dataProvider, _) {
+              // Debug prints
+              print('📋 Building list view. Provider isLoading: ${dataProvider.isLoading}, Local isLoading: $_isLoading');
+              print('📋 Error: ${dataProvider.error}');
+              print('📋 Items count: ${dataProvider.items.length}');
+              print('📋 Search mode: $isSearchMode');
 
-              // Status bar for active filters and sorting
-              if (dataProvider.activeFilters.isNotEmpty)
-                Container(
-                  color: Colors.grey.shade100,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: AppDimensions.spacingL,
-                    vertical: AppDimensions.spacingXs
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              ...dataProvider.activeFilters.entries.map((entry) {
-                                String label = _columnLabels[entry.key] ?? entry.key;
-                                return Padding(
-                                  padding: EdgeInsets.only(right: AppDimensions.spacingS),
-                                  child: Chip(
-                                    backgroundColor: AppColors.primaryLighter.withOpacity(0.3),
-                                    label: Text('$label: ${entry.value}'),
-                                    deleteIcon: Icon(Icons.close, size: AppDimensions.iconS),
-                                    onDeleted: () {
-                                      if (_filterControllers.containsKey(entry.key)) {
-                                        _filterControllers[entry.key]!.clear();
-                                      }
-                                      dataProvider.applyFilter(entry.key, null);
-                                    },
-                                  ),
-                                );
-                              }),
-                            ],
-                          ),
-                        ),
+              return Column(
+                children: [
+                  // Search results indicator (only during search)
+                  if (isSearchMode)
+                    Container(
+                      color: Colors.blue.shade50,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: AppDimensions.spacingL,
+                        vertical: AppDimensions.spacingS
                       ),
-                    ],
-                  ),
-                ),
-              // Gap between filter bar and data card
-              SizedBox(height: AppDimensions.spacingM),
-
-              // Data card
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingM),
-                  child: Card(
-                    elevation: AppDimensions.elevationL,
-                    color: AppColors.cardBackground,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(AppDimensions.radiusM),
-                        topRight: Radius.circular(AppDimensions.radiusM),
-                        bottomLeft: _isScrolledToBottom ? Radius.circular(AppDimensions.radiusM) : Radius.zero,
-                        bottomRight: _isScrolledToBottom ? Radius.circular(AppDimensions.radiusM) : Radius.zero,
-                      ),
-                    ),
-                    margin: _isScrolledToBottom ? EdgeInsets.only(bottom: AppDimensions.spacingM) : EdgeInsets.zero,
-                    child: Column(
-                      children: [
-                        // Title - using plural_label from dataProvider's objectMetadata
-                        Container(
-                          width: double.infinity,
-                          padding: EdgeInsets.fromLTRB(
-                            AppDimensions.spacingL,
-                            AppDimensions.spacingS,
-                            AppDimensions.spacingL,
-                            AppDimensions.spacingS
-                          ),
-                          child: Text(
-                            // Use plural_label if available, otherwise capitalize type
-                            dataProvider.objectMetadata?.pluralLabel ??
-                                (widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)),
-                            style: AppTextStyles.bodyLarge,
-                          ),
-                        ),
-
-                        // Data rows
-                        Expanded(
-                          child: NotificationListener<ScrollNotification>(
-                            onNotification: (ScrollNotification scrollInfo) {
-                              if (scrollInfo is ScrollEndNotification) {
-                                // When scroll ends, check if we're at the bottom
-                                if (scrollInfo.metrics.pixels == scrollInfo.metrics.maxScrollExtent) {
-                                  if (!_isScrolledToBottom) {
-                                    setState(() {
-                                      _isScrolledToBottom = true;
-                                    });
-                                  }
-                                } else if (_isScrolledToBottom) {
-                                  setState(() {
-                                    _isScrolledToBottom = false;
-                                  });
-                                }
-                              }
-                              return true;
-                            },
-                            child: ListView.builder(
-                              itemCount: items.length,
-                              padding: EdgeInsets.only(bottom: AppDimensions.spacingL),
-                              itemBuilder: (ctx, index) {
-                                final item = items[index];
-                                return _buildDynamicItem(item, limitedVisibleColumns, _columnLabels);
-                              },
+                      child: Row(
+                        children: [
+                          Icon(Icons.search, size: AppDimensions.iconS, color: Colors.blue.shade600),
+                          SizedBox(width: AppDimensions.spacingS),
+                          Text(
+                            'Search results for "${_searchController.text}" (${dataProvider.items.length} found)',
+                            style: TextStyle(
+                              color: Colors.blue.shade600,
+                              fontSize: AppDimensions.textS,
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+
+                  // Gap between action bar and data card
+                  SizedBox(height: AppDimensions.spacingM),
+
+                  // Content area - now handles all states
+                  Expanded(
+                    child: _buildContentArea(dataProvider),
                   ),
-                ),
-              ),
-            ],
-          );
-        },
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// Separate method to build content area
+Widget _buildContentArea(DataProvider dataProvider) {
+  // Show loading if either local loading or provider loading
+  if (_isLoading || dataProvider.isLoading) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: AppDimensions.spacingL),
+          Text(
+            isSearchMode ? 'Searching...' : 'Loading data...', 
+            style: AppTextStyles.bodyMedium
+          ),
+        ],
       ),
     );
   }
+
+  if (dataProvider.error != null) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, color: AppColors.error, size: 48),
+          SizedBox(height: AppDimensions.spacingL),
+          Text(
+            dataProvider.error!,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.error),
+          ),
+          SizedBox(height: AppDimensions.spacingL),
+          ElevatedButton(
+            onPressed: () {
+              if (isSearchMode && _searchController.text.isNotEmpty) {
+                _performSearch(_searchController.text);
+              } else {
+                _loadData();
+              }
+            },
+            child: Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  final items = dataProvider.items;
+  
+  // Better empty state handling
+  if (items.isEmpty) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            isSearchMode ? Icons.search_off : Icons.inbox_outlined,
+            size: 64,
+            color: Colors.grey.shade400,
+          ),
+          SizedBox(height: AppDimensions.spacingL),
+          Text(
+            isSearchMode 
+                ? 'No results found for "${_searchController.text}"'
+                : 'No data available',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: Colors.grey.shade600,
+            ),
+          ),
+          if (isSearchMode) ...[
+            SizedBox(height: AppDimensions.spacingM),
+            ElevatedButton(
+              onPressed: () {
+                _searchController.clear();
+                _toggleSearchMode();
+              },
+              child: Text('Clear Search'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // Data display
+  final visibleColumns = dataProvider.visibleColumns;
+  final limitedVisibleColumns = visibleColumns.length > 3
+      ? visibleColumns.sublist(0, 3)
+      : visibleColumns;
+  final allColumns = dataProvider.allColumns;
+  
+  // Update column labels mapping
+  _updateColumnLabels(allColumns);
+
+  return Padding(
+    padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingM),
+    child: Card(
+      elevation: AppDimensions.elevationL,
+      color: AppColors.cardBackground,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(AppDimensions.radiusM),
+          topRight: Radius.circular(AppDimensions.radiusM),
+          bottomLeft: _isScrolledToBottom ? Radius.circular(AppDimensions.radiusM) : Radius.zero,
+          bottomRight: _isScrolledToBottom ? Radius.circular(AppDimensions.radiusM) : Radius.zero,
+        ),
+      ),
+      margin: _isScrolledToBottom ? EdgeInsets.only(bottom: AppDimensions.spacingM) : EdgeInsets.zero,
+      child: Column(
+        children: [
+          // Title
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.fromLTRB(
+              AppDimensions.spacingL,
+              AppDimensions.spacingS,
+              AppDimensions.spacingL,
+              AppDimensions.spacingS
+            ),
+            child: Text(
+              dataProvider.objectMetadata?.pluralLabel ??
+                  (widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)),
+              style: AppTextStyles.bodyLarge,
+            ),
+          ),
+
+          // Data rows
+          Expanded(
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (ScrollNotification scrollInfo) {
+                if (scrollInfo is ScrollEndNotification) {
+                  if (scrollInfo.metrics.pixels == scrollInfo.metrics.maxScrollExtent) {
+                    if (!_isScrolledToBottom) {
+                      setState(() {
+                        _isScrolledToBottom = true;
+                      });
+                    }
+                  } else if (_isScrolledToBottom) {
+                    setState(() {
+                      _isScrolledToBottom = false;
+                    });
+                  }
+                }
+                return true;
+              },
+              child: ListView.builder(
+                itemCount: items.length,
+                padding: EdgeInsets.only(bottom: AppDimensions.spacingL),
+                itemBuilder: (ctx, index) {
+                  final item = items[index];
+                  return _buildDynamicItem(item, limitedVisibleColumns, _columnLabels);
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 
   Widget _buildDynamicItem(dynamic item, List<String> visibleColumns, Map<String, String> columnLabels) {
     return Container(
@@ -687,7 +730,12 @@ class _ListScreenState extends State<ListScreen> {
                             SizedBox(width: AppDimensions.spacingS), // Space after colon
                             Expanded(
                               child: Text(
-                                item.getStringAttribute(column, defaultValue: '---'),
+                                // With this temporarily (for debugging):
+                                () {
+                                  // Debug logging
+                                  item.debugLogField(column);
+                                  return item.getDisplayValue(column, defaultValue: '---');
+                                }(),
                                 style: TextStyle(
                                   // Swapped styles - values now lighter
                                   fontSize: AppDimensions.textM,
@@ -729,9 +777,15 @@ class _ListScreenState extends State<ListScreen> {
                       );
                       // If result is true, refresh the data immediately
                       if (result == true) {
-                        final dataProvider = Provider.of<DataProvider>(context, listen: false);
-                        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                        await dataProvider.loadData(widget.type, authProvider.token);
+                        if (isSearchMode && _searchController.text.isNotEmpty) {
+                          // If in search mode, redo the search
+                          _performSearch(_searchController.text);
+                        } else {
+                          // Otherwise load normal data
+                          final dataProvider = Provider.of<DataProvider>(context, listen: false);
+                          final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                          await dataProvider.loadData(widget.type, authProvider.token);
+                        }
                       }
                     } else if (value == 'edit') {
                       final result = await Navigator.push(
@@ -744,11 +798,41 @@ class _ListScreenState extends State<ListScreen> {
                         ),
                       );
                       if (result == true) {
-                        // We could refresh data here, but it's already done in updateItem method
-                        // Just show a confirmation
-                        AppSnackBar.showSuccess(context, 'Item updated successfully');
+                        print('📝 Edit completed successfully, refreshing data...');
+                        
+                        // Force a refresh of the data to ensure consistency
+                        setState(() {
+                          _isLoading = true;
+                        });
+                        
+                        try {
+                          if (isSearchMode && _searchController.text.isNotEmpty) {
+                            // If in search mode, redo the search
+                            await _performSearch(_searchController.text);
+                          } else {
+                            // Otherwise load normal data
+                            final dataProvider = Provider.of<DataProvider>(context, listen: false);
+                            final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                            await dataProvider.loadData(widget.type, authProvider.token);
+                          }
+                          
+                          if (mounted) {
+                            setState(() {
+                              _isLoading = false;
+                            });
+                            AppSnackBar.showSuccess(context, 'Item updated successfully');
+                          }
+                        } catch (e) {
+                          print('❌ Error refreshing data after edit: $e');
+                          if (mounted) {
+                            setState(() {
+                              _isLoading = false;
+                            });
+                            AppSnackBar.showError(context, 'Failed to refresh data');
+                          }
+                        }
                       }
-                    }
+                    } 
                   },
                   itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                     PopupMenuItem<String>(

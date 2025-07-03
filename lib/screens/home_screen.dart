@@ -4,18 +4,15 @@ import 'package:fl_chart/fl_chart.dart';
 import '../providers/dashboard_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/dashboard_item.dart';
-import '../widgets/user_profile_widget.dart'; // Import the new widget
+import '../widgets/user_profile_widget.dart';
 import 'list_screen.dart';
 import 'menu_screen.dart';
-
-// Create a global key for the navigation state
-final GlobalKey<_MainLayoutState> mainLayoutKey = GlobalKey<_MainLayoutState>();
-
+import '../providers/tabs_provider.dart';
+import '../providers/app_provider.dart';
 class MainLayout extends StatefulWidget {
   final int initialIndex;
   final String? screenType;
 
-  // Remove the default key assignment to avoid duplicate key issues
   const MainLayout({super.key, this.initialIndex = 0, this.screenType});
 
   @override
@@ -24,37 +21,111 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
   late int _currentIndex;
-  late List<Widget> _screens;
-  bool _forceRebuild = false;
-
+  late String _currentScreenType;
+  List<String> _availableScreenTypes = [];
+  
+  // Store the ListScreen instances to prevent recreation
+  Map<String, ListScreen> _listScreenCache = {};
+  
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
-    _initializeScreens();
-
-    // Register as an observer to catch app lifecycle changes
+    _currentScreenType = widget.screenType ?? 'leads'; // Default fallback
+    print('🔧 MainLayout initState: initialIndex=${widget.initialIndex}, screenType=${widget.screenType}');
     WidgetsBinding.instance.addObserver(this);
+    
+    // Load tabs data when MainLayout initializes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadTabsIfNeeded();
+      _updateAvailableScreenTypesFromProvider();
+    });
+  }
 
-    // Force a rebuild after the first frame
+  void _loadTabsIfNeeded() {
+    if (!mounted) return;
+    final tabsProvider = Provider.of<TabsProvider>(context, listen: false);
+    if (tabsProvider.tabs.isEmpty && !tabsProvider.isLoading) {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      tabsProvider.fetchTabs(authProvider);
+    }
+  }
+
+  // Update available screen types from the current app's tabs
+  void _updateAvailableScreenTypesFromProvider() {
+    if (!mounted) return;
+    
+    final appsProvider = Provider.of<AppsProvider>(context, listen: false);
+    
+    if (appsProvider.appTabs.isNotEmpty) {
+      // Get all tabs from the selected app
+      final newScreenTypes = appsProvider.appTabs
+          .map((tab) => tab.name)
+          .toList();
+      
+      setState(() {
+        _availableScreenTypes = newScreenTypes;
+        _listScreenCache.clear(); // Clear cache when screen types change
+        
+        // Update current screen type if it's not in the new list or if it's still default
+        if (newScreenTypes.isNotEmpty) {
+          if (!newScreenTypes.contains(_currentScreenType) || _currentScreenType == 'leads') {
+            _currentScreenType = newScreenTypes.first;
+          }
+        }
+      });
+      
+      print('🔄 Updated available screen types: $_availableScreenTypes');
+    }
+  }
+
+  // Get or create ListScreen for a specific type
+  ListScreen _getListScreen(String type) {
+    if (!_listScreenCache.containsKey(type)) {
+      _listScreenCache[type] = ListScreen(
+        key: ValueKey('list_screen_$type'),
+        type: type,
+      );
+    }
+    return _listScreenCache[type]!;
+  }
+
+  void navigateToTab(int index, {String? type}) {
+    print('🔄 NavigateToTab called: index=$index, type=$type, currentType=$_currentScreenType');
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         setState(() {
-          _forceRebuild = true;
+          _currentIndex = index;
+          if (type != null) {
+            _currentScreenType = type;
+          }
         });
       }
     });
   }
 
-  void navigateToTab(int index, {String? type}) {
+  // Method to change the dynamic screen type (called when selecting different objects)
+  void changeScreenType(String newType) {
     setState(() {
-      _currentIndex = index;
-      if (type != null && index == 1) {
-        // If we're navigating to the list screen (index 1) and have a type
-        _screens[1] = ListScreen(type: type);
-      } else if (type != null && index == 2) {
-        // If we're navigating to account screen (index 2) and have a type
-        _screens[2] = ListScreen(type: type);
+      _currentScreenType = newType;
+      // If we're not currently on the dynamic tab, switch to it
+      if (_currentIndex != 1) {
+        _currentIndex = 1;
+      }
+    });
+  }
+
+  // Method to update available screen types when app is selected
+  void updateAvailableScreenTypes(List<String> screenTypes) {
+    setState(() {
+      _availableScreenTypes = screenTypes;
+      // Clear cache when screen types change
+      _listScreenCache.clear();
+      
+      // Update current screen type if it's not in the new list
+      if (_availableScreenTypes.isNotEmpty && !_availableScreenTypes.contains(_currentScreenType)) {
+        _currentScreenType = _availableScreenTypes.first;
       }
     });
   }
@@ -67,90 +138,287 @@ class _MainLayoutState extends State<MainLayout> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Force rebuild when app resumes from background
     if (state == AppLifecycleState.resumed && mounted) {
       setState(() {});
     }
   }
 
-  void _initializeScreens() {
-    _screens = [
-      const HomeScreenContent(), // Modified to use content-only version
-      ListScreen(type: widget.screenType ?? 'lead'),
-      ListScreen(type: 'account'),
-      MenuScreen(),
-    ];
+  String _getDisplayName(String? type, TabsProvider tabsProvider, AppsProvider appsProvider) {
+    if (type == null) return 'Data';
+    
+    // First try to get display name from the current app's tabs
+    try {
+      final appTab = appsProvider.appTabs.firstWhere(
+        (tab) => tab.name == type,
+      );
+      return appTab.pluralLabel;
+    } catch (e) {
+      // Tab not found, continue to fallback
+    }
+    
+    // Fallback to TabsProvider if not found in app tabs
+    if (!tabsProvider.isLoading && tabsProvider.tabs.isNotEmpty) {
+      final displayName = tabsProvider.getDisplayNameForTab(type);
+      if (displayName != type && displayName != type.toUpperCase()) {
+        return displayName;
+      }
+    }
+    
+    return _getFallbackDisplayName(type);
+  }
+
+  String _getFallbackDisplayName(String type) {
+    // Fallback to manual mapping if not found in tabs
+    switch (type.toLowerCase()) {
+      case 'leads':
+        return 'Leads';
+      case 'accounts':
+        return 'Accounts';
+      case 'contact':
+        return 'Contacts';
+      case 'opportunity':
+        return 'Opportunities';
+      case 'campaign':
+        return 'Campaigns';
+      case 'product':
+        return 'Products';
+      case 'quote':
+        return 'Quotes';
+      case 'campaign_member':
+        return 'Campaign Members';
+      case 'invoice':
+        return 'Invoices';
+      case 'visit':
+        return 'Visits';
+      case 'case':
+        return 'Cases';
+      case 'target':
+        return 'Targets';
+      default:
+        return type.substring(0, 1).toUpperCase() + type.substring(1) + 's';
+    }
+  }
+
+  IconData _getIconForType(String? type, TabsProvider tabsProvider, AppsProvider appsProvider) {
+    if (type == null) return Icons.list;
+    
+    // First try to get icon from the current app's tabs
+    try {
+      final appTab = appsProvider.appTabs.firstWhere(
+        (tab) => tab.name == type,
+      );
+      return _getIconFromString(appTab.icon);
+    } catch (e) {
+      // Tab not found, continue to fallback
+    }
+    
+    // Fallback to TabsProvider
+    if (!tabsProvider.isLoading && tabsProvider.tabs.isNotEmpty) {
+      final tab = tabsProvider.getTabByName(type);
+      
+      if (tab != null && !tab.isIconUrl) {
+        return _getIconFromString(tab.icon);
+      }
+    }
+    
+    return _getFallbackIcon(type);
+  }
+
+  // Helper method to convert icon string to IconData
+  IconData _getIconFromString(String iconString) {
+    switch (iconString.toLowerCase()) {
+      case 'editlocation':
+        return Icons.edit_location;
+      case 'addlocation':
+        return Icons.add_location;
+      case 'cases':
+        return Icons.work;
+      case 'peoplealt':
+        return Icons.people;
+      case 'addtophotos':
+        return Icons.add_to_photos;
+      case 'requestquote':
+        return Icons.request_quote;
+      case 'contactemergency':
+        return Icons.contact_emergency;
+      case 'leaderboard':
+        return Icons.leaderboard;
+      default:
+        return Icons.apps;
+    }
+  }
+
+  IconData _getFallbackIcon(String type) {
+    // Fallback to manual mapping
+    switch (type.toLowerCase()) {
+      case 'leads':
+        return Icons.person;
+      case 'accounts':
+        return Icons.business;
+      case 'contact':
+        return Icons.contacts;
+      case 'opportunity':
+        return Icons.star;
+      case 'campaign':
+        return Icons.campaign;
+      case 'product':
+        return Icons.inventory;
+      case 'quote':
+        return Icons.request_quote;
+      case 'campaign_member':
+        return Icons.group;
+      case 'invoice':
+        return Icons.receipt;
+      case 'visit':
+        return Icons.location_on;
+      case 'case':
+        return Icons.work;
+      case 'target':
+        return Icons.track_changes;
+      default:
+        return Icons.list;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Print debug info
-    print('Building MainLayout, currentIndex: $_currentIndex, forceRebuild: $_forceRebuild');
+    print('🏗️ Building MainLayout, currentIndex: $_currentIndex, screenType: $_currentScreenType');
+    print('🔍 Available screen types: $_availableScreenTypes');
 
-    return Scaffold(
-      // Use SafeArea to respect system UI elements
-      body: SafeArea(
-        // Specify bottom as false to allow our bottom nav to extend to the edge
-        bottom: false,
-        child: IndexedStack(
-          index: _currentIndex,
-          children: _screens,
-        ),
-      ),
-      // IMPORTANT: Force the bottom nav to be visible with key and physics
-      bottomNavigationBar: Material(
-        elevation: 16, // High elevation for visibility
-        color: Colors.white,
-        child: Container(
-          decoration: BoxDecoration(
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 8,
-                spreadRadius: 1,
-              ),
-            ],
+    return Consumer2<TabsProvider, AppsProvider>(
+      builder: (context, tabsProvider, appsProvider, child) {
+        // Update available screen types when app changes
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _updateAvailableScreenTypesFromProvider();
+        });
+        
+        // Create screens list: Home + Dynamic Screen + Menu (3 total)
+        final screens = <Widget>[
+          // Index 0: Home
+          const HomeScreenContent(),
+          
+          // Index 1: Dynamic screen (shows data based on _currentScreenType)
+          _getListScreen(_currentScreenType),
+          
+          // Index 2: Menu
+          MenuScreen(),
+        ];
+
+        // Build bottom navigation items: Home + Dynamic + Menu (3 total)
+        final List<BottomNavigationBarItem> bottomNavItems = [
+          // Home (Index 0)
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
           ),
-          child: BottomNavigationBar(
-            key: ValueKey('bottom_nav_bar_$_forceRebuild'), // Force rebuilding with key
-            currentIndex: _currentIndex,
-            onTap: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
-            },
-            type: BottomNavigationBarType.fixed,
-            backgroundColor: Colors.white,
-            selectedItemColor: Colors.blue,
-            unselectedItemColor: Colors.grey,
-            showUnselectedLabels: true,
-            elevation: 24, // Maximum elevation
-            items: [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home),
-                label: 'Home',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person),
-                label: 'Leads',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.business),
-                label: 'Accounts',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.menu),
-                label: 'Menu',
-              ),
-            ],
+          
+          // Dynamic item (Index 1) - changes based on selected object
+          BottomNavigationBarItem(
+            icon: Icon(_getIconForType(_currentScreenType, tabsProvider, appsProvider)),
+            label: _getDisplayName(_currentScreenType, tabsProvider, appsProvider),
           ),
-        ),
-      ),
+          
+          // Menu (Index 2)
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.menu),
+            label: 'Menu',
+          ),
+        ];
+
+        print('📊 Bottom nav items count: ${bottomNavItems.length}');
+        print('📋 Bottom nav labels: ${bottomNavItems.map((item) => item.label).toList()}');
+
+        return Scaffold(
+          body: SafeArea(
+            bottom: false,
+            child: IndexedStack(
+              index: _currentIndex,
+              children: screens,
+            ),
+          ),
+          bottomNavigationBar: ClipRect(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).padding.bottom,
+                ),
+                child: Container(
+                  height: 60,
+                  child: Row(
+                    children: List.generate(bottomNavItems.length, (index) {
+                      final item = bottomNavItems[index];
+                      final isSelected = _currentIndex == index;
+                      
+                      // Extract IconData from the BottomNavigationBarItem
+                      IconData iconData;
+                      
+                      if (item.icon is Icon) {
+                        iconData = (item.icon as Icon).icon!;
+                      } else {
+                        iconData = Icons.help; // fallback icon
+                      }
+                      
+                      return Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            print('🔄 Bottom nav tapped: index=$index');
+                            setState(() {
+                              _currentIndex = index;
+                            });
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: isSelected ? Colors.blue.withOpacity(0.1) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  iconData,
+                                  color: isSelected ? Colors.blue : Colors.grey[600],
+                                  size: 22,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  item.label!,
+                                  style: TextStyle(
+                                    color: isSelected ? Colors.blue : Colors.grey[600],
+                                    fontSize: 10,
+                                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
-
-// Create a content-only version of HomeScreen (no Scaffold)
+// Rest of your HomeScreenContent class remains the same...
 class HomeScreenContent extends StatefulWidget {
   const HomeScreenContent({super.key});
 
@@ -163,20 +431,19 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
   void initState() {
     super.initState();
     print('🏠 HomeScreen initialized');
-    // Load dashboard when the screen is initialized
     WidgetsBinding.instance.addPostFrameCallback((_) {
       print('🔄 Loading dashboard data...');
       if (!mounted) return;
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final dashboardProvider = Provider.of<DashboardProvider>(
-          context, listen: false);
+      final dashboardProvider = Provider.of<DashboardProvider>(context, listen: false);
       dashboardProvider.initialize(authProvider);
     });
   }
 
+  // All your existing chart building methods remain the same...
   Widget _buildWidget(DashboardItem item) {
     print('Building widget: ${item.title} (${item.type})');
-
+    
     switch (item.type) {
       case 'chart':
         return _buildChartWidget(item);
@@ -207,9 +474,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
         chartWidget = _buildBarChart(labels, values);
         break;
       default:
-        chartWidget = Center(
-          child: Text('Unsupported chart type: $chartType'),
-        );
+        chartWidget = Center(child: Text('Unsupported chart type: $chartType'));
     }
 
     return Card(
@@ -219,18 +484,9 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              item.title,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            Text(item.title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             SizedBox(height: 16),
-            SizedBox(
-              height: 200,
-              child: chartWidget,
-            ),
+            SizedBox(height: 200, child: chartWidget),
           ],
         ),
       ),
@@ -242,41 +498,12 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       PieChartData(
         sections: List.generate(
           labels.length,
-              (index) =>
-              PieChartSectionData(
-                value: (values[index] ?? 0).toDouble(),
-                title: '${labels[index]}',
-                radius: 100,
-                titleStyle: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-        ),
-        pieTouchData: PieTouchData(
-          touchCallback: (FlTouchEvent event, pieTouchResponse) {
-            if (pieTouchResponse?.touchedSection != null) {
-              final section = pieTouchResponse!.touchedSection!;
-              final index = section.touchedSectionIndex;
-              if (index >= 0 && index < labels.length) {
-                showDialog(
-                  context: context,
-                  builder: (context) =>
-                      AlertDialog(
-                        title: Text(labels[index].toString()),
-                        content: Text('${values[index]} leads'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: Text('Close'),
-                          ),
-                        ],
-                      ),
-                );
-              }
-            }
-          },
+          (index) => PieChartSectionData(
+            value: (values[index] ?? 0).toDouble(),
+            title: '${labels[index]}',
+            radius: 100,
+            titleStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+          ),
         ),
       ),
     );
@@ -298,20 +525,14 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               },
             ),
           ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 40,
-            ),
-          ),
+          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
         ),
         borderData: FlBorderData(show: true),
         lineBarsData: [
           LineChartBarData(
             spots: List.generate(
               values.length,
-                  (index) =>
-                  FlSpot(index.toDouble(), (values[index] ?? 0).toDouble()),
+              (index) => FlSpot(index.toDouble(), (values[index] ?? 0).toDouble()),
             ),
             isCurved: true,
             color: Colors.blue,
@@ -320,27 +541,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
             belowBarData: BarAreaData(show: true),
           ),
         ],
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            tooltipBgColor: Colors.blue.withOpacity(0.8),
-            tooltipPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            tooltipMargin: 0,
-            fitInsideHorizontally: true,
-            fitInsideVertically: true,
-            getTooltipItems: (touchedSpots) {
-              return touchedSpots.map((spot) {
-                final index = spot.x.toInt();
-                if (index >= 0 && index < labels.length) {
-                  return LineTooltipItem(
-                    '${values[index]} leads',
-                    TextStyle(color: Colors.white),
-                  );
-                }
-                return LineTooltipItem('', TextStyle(color: Colors.white));
-              }).toList();
-            },
-          ),
-        ),
       ),
     );
   }
@@ -361,45 +561,21 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               },
             ),
           ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 40,
-            ),
-          ),
+          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
         ),
         borderData: FlBorderData(show: true),
         barGroups: List.generate(
           values.length,
-              (index) =>
-              BarChartGroupData(
-                x: index,
-                barRods: [
-                  BarChartRodData(
-                    toY: (values[index] ?? 0).toDouble(),
-                    color: Colors.blue,
-                    width: 20,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ],
+          (index) => BarChartGroupData(
+            x: index,
+            barRods: [
+              BarChartRodData(
+                toY: (values[index] ?? 0).toDouble(),
+                color: Colors.blue,
+                width: 20,
+                borderRadius: BorderRadius.circular(4),
               ),
-        ),
-        barTouchData: BarTouchData(
-          touchTooltipData: BarTouchTooltipData(
-            tooltipBgColor: Colors.blue.withOpacity(0.8),
-            tooltipPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            tooltipMargin: 0,
-            fitInsideHorizontally: true,
-            fitInsideVertically: true,
-            getTooltipItem: (group, groupIndex, rod, rodIndex) {
-              if (groupIndex >= 0 && groupIndex < labels.length) {
-                return BarTooltipItem(
-                  '${values[groupIndex]} leads',
-                  TextStyle(color: Colors.white),
-                );
-              }
-              return BarTooltipItem('', TextStyle(color: Colors.white));
-            },
+            ],
           ),
         ),
       ),
@@ -414,18 +590,9 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              item.title,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            Text(item.title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             SizedBox(height: 16),
-            Text(
-              'Data Source: ${item.config['data_source'] ?? 'Unknown'}',
-              style: TextStyle(fontSize: 14),
-            ),
+            Text('Data Source: ${item.config['data_source'] ?? 'Unknown'}', style: TextStyle(fontSize: 14)),
           ],
         ),
       ),
@@ -440,18 +607,9 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              item.title,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            Text(item.title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             SizedBox(height: 16),
-            Text(
-              'Data Source: ${item.config['data_source'] ?? 'Unknown'}',
-              style: TextStyle(fontSize: 14),
-            ),
+            Text('Data Source: ${item.config['data_source'] ?? 'Unknown'}', style: TextStyle(fontSize: 14)),
           ],
         ),
       ),
@@ -465,7 +623,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       children: [
         AppBar(
           title: Text('Home'),
-          // Add the UserProfileWidget to the leading position of the AppBar
           leading: const UserProfileWidget(),
           backgroundColor: Colors.blue[700],
           foregroundColor: Colors.white,
@@ -474,10 +631,8 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
               icon: Icon(Icons.refresh),
               onPressed: () {
                 print('🔄 Refresh button pressed');
-                final authProvider = Provider.of<AuthProvider>(
-                    context, listen: false);
-                final dashboardProvider = Provider.of<DashboardProvider>(
-                    context, listen: false);
+                final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                final dashboardProvider = Provider.of<DashboardProvider>(context, listen: false);
                 dashboardProvider.refreshDashboard(authProvider);
               },
             ),
@@ -488,11 +643,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
             color: Color(0xFFE0F7FA),
             child: Consumer<DashboardProvider>(
               builder: (context, dashboardProvider, child) {
-                // Your existing consumer logic...
-
-                print('📊 Dashboard state: isLoading=${dashboardProvider
-                    .isLoading}, error=${dashboardProvider
-                    .error}, items=${dashboardProvider.items.length}');
+                print('📊 Dashboard state: isLoading=${dashboardProvider.isLoading}, error=${dashboardProvider.error}, items=${dashboardProvider.items.length}');
 
                 if (dashboardProvider.isLoading) {
                   return Center(
@@ -506,22 +657,18 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     ),
                   );
                 }
+                
                 if (dashboardProvider.error.isNotEmpty) {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          dashboardProvider.error,
-                          style: TextStyle(color: Colors.red),
-                          textAlign: TextAlign.center,
-                        ),
+                        Text(dashboardProvider.error, style: TextStyle(color: Colors.red), textAlign: TextAlign.center),
                         SizedBox(height: 16),
                         ElevatedButton(
                           onPressed: () {
                             print('🔄 Retrying dashboard load...');
-                            final authProvider = Provider.of<AuthProvider>(
-                                context, listen: false);
+                            final authProvider = Provider.of<AuthProvider>(context, listen: false);
                             dashboardProvider.refreshDashboard(authProvider);
                           },
                           child: Text('Retry'),
@@ -541,8 +688,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                         ElevatedButton(
                           onPressed: () {
                             print('🔄 Refreshing empty dashboard...');
-                            final authProvider = Provider.of<AuthProvider>(
-                                context, listen: false);
+                            final authProvider = Provider.of<AuthProvider>(context, listen: false);
                             dashboardProvider.refreshDashboard(authProvider);
                           },
                           child: Text('Refresh'),
@@ -555,17 +701,14 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                 return RefreshIndicator(
                   onRefresh: () async {
                     print('🔄 Pull-to-refresh triggered');
-                    final authProvider = Provider.of<AuthProvider>(
-                        context, listen: false);
+                    final authProvider = Provider.of<AuthProvider>(context, listen: false);
                     await dashboardProvider.refreshDashboard(authProvider);
                   },
                   child: ListView.builder(
                     itemCount: dashboardProvider.items.length,
                     itemBuilder: (context, index) {
                       final item = dashboardProvider.items[index];
-                      print(
-                          '📦 Building widget ${index + 1}: ${item.title} (${item
-                              .type})');
+                      print('📦 Building widget ${index + 1}: ${item.title} (${item.type})');
                       return _buildWidget(item);
                     },
                   ),

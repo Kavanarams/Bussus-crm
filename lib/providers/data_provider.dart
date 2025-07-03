@@ -73,6 +73,7 @@ class DataProvider with ChangeNotifier {
   String _token = '';
   String _type = '';
   String? lastError;
+  String _activeType = '';
 
   // Filter and sort state
   Map<String, dynamic> _activeFilters = {};
@@ -90,6 +91,13 @@ class DataProvider with ChangeNotifier {
 
   // Getter and setter for _sortingActive flag
   bool get sortingActive => _sortingActive;
+
+  bool isServingType(String type) {
+  return _activeType == type;
+}
+
+// Get current active type
+String get activeType => _activeType;
   void setSortingActive(bool value) {
     _sortingActive = value;
     if (value) {
@@ -100,14 +108,14 @@ class DataProvider with ChangeNotifier {
   }
 
   // FIX: Updated getter to correctly handle filtered vs unfiltered state
-  List<DynamicModel> get items {
-    // If filter is active but filteredItems is empty, show loading or empty state
-    if (_activeFilters.isNotEmpty) {
-      return _filteredItems;
-    } else {
-      return _items;
-    }
-  }
+  // List<DynamicModel> get items {
+  //   // If filter is active but filteredItems is empty, show loading or empty state
+  //   if (_activeFilters.isNotEmpty) {
+  //     return _filteredItems;
+  //   } else {
+  //     return _items;
+  //   }
+  // }
 
   // Add this getter to your DataProvider class
   List<DynamicModel> get filteredItems {
@@ -139,9 +147,13 @@ class DataProvider with ChangeNotifier {
   String? get currentListViewId => _currentListViewId;
 
   // Getters for filter and sort state
-  Map<String, dynamic> get activeFilters => _activeFilters;
+  Map<String, dynamic> get activeFilters => Map.from(_activeFilters);
   String? get sortColumn => _sortColumn;
   bool get sortAscending => _sortAscending;
+  // ADD: Method to check if filters are currently active
+  bool get hasActiveFilters => _activeFilters.isNotEmpty;
+  // ADD: Method to get filter count
+  int get activeFilterCount => _activeFilters.length;
 
   // Add this to your DataProvider class
   void setState(Function() updateFunction) {
@@ -176,132 +188,566 @@ class DataProvider with ChangeNotifier {
   }
 
   // Helper method to ensure type is in plural form
-  String _ensurePluralType(String type) {
-    // If the type doesn't end with 's', add it
-    if (!type.endsWith('s')) {
-      return '${type}s';
-    }
-    return type;
+ String _getCorrectType(String type) {
+  // Only these specific types should be plural
+  switch (type.toLowerCase()) {
+    case 'lead':
+      return 'leads';
+    case 'account':
+      return 'accounts';
+    default:
+      // All other types remain singular
+      return type;
   }
+}
 
+void resetForNewType(String newType) {
+  print('🔄 Resetting DataProvider for new type: $newType');
+  
+  // Only reset if we're actually changing types
+  if (_activeType == newType) {
+    print('ℹ️ Same type, preserving filters and state');
+    return; // Don't reset if it's the same type
+  }
+  
+  // Clear all data
+  _items = [];
+  _filteredItems = [];
+  _originalItems = [];
+  
+  // Reset state
+  _currentResponse = null;
+  _currentListViewId = null;
+  _error = null;
+  
+  // Reset filters and sorting ONLY when changing types
+  _activeFilters = {};
+  _sortColumn = null;
+  _sortAscending = true;
+  _sortingActive = false;
+  
+  // Update type
+  _type = newType;
+  _activeType = newType;
+  
+  _safeNotifyListeners();
+}
   // Updated to require token as a parameter and handle plural type
   Future<void> loadData(String type, String token) async {
-    _token = token;
-    _type = type;
-    
-    // Ensure type is in plural form
-    String pluralType = _ensurePluralType(type);
-
-    // If sorting is active, save the current sort settings
-    String? savedSortColumn = _sortColumn;
-    bool savedSortAscending = _sortAscending;
-    bool wasSortingActive = _sortingActive;
-
-    // Only reset these if sorting is not active
-    if (!_sortingActive) {
+  print('🔍 LoadData called for type: $type, current active type: $_activeType');
+  
+  if (_isLoading && _activeType == type) {
+    print('⚠️ Already loading data for $type, ignoring duplicate request');
+    return;
+  }
+  
+  if (_isLoading && _activeType != type) {
+    print('🔄 Switching from $_activeType to $type while loading');
+  }
+  
+  bool switchingTypes = _activeType != type;
+  _activeType = type;
+  _token = token;
+  _type = type;
+  
+  // IMPORTANT: Only reset filters if switching types
+  if (switchingTypes) {
+    print('🔄 Switching types, clearing all state');
+    _items = [];
+    _filteredItems = [];
+    _originalItems = [];
+    _currentResponse = null;
+    _currentListViewId = null;
+    _error = null;
+    _activeFilters = {}; // Only clear filters when switching types
+    _sortColumn = null;
+    _sortAscending = true;
+    _sortingActive = false;
+  } else {
+    print('ℹ️ Same type, preserving filters: $_activeFilters');
+    // For same type, only clear data but preserve filters
+    if (_activeFilters.isEmpty) {
       _items = [];
       _filteredItems = [];
-      _activeFilters = {};
       _originalItems = [];
     }
+  }
+  
+  _isLoading = true;
+  _safeNotifyListeners();
+
+  try {
+    String correctType = _getCorrectType(type);
+    String endpoint = '${ApiConfig.baseUrl.replaceFirst('qa', 'dev')}/api/listview/$correctType?limit=1000';
     
-    _error = null;
-    _currentListViewId = null;
+    print('🌐 Fetching data from: $endpoint for type: $type');
 
-    _isLoading = true;
-    _safeNotifyListeners();
-
-    try {
-      // Use the base URL from ApiConfig
-      String endpoint = '${ApiConfig.baseUrl.replaceFirst('qa', 'dev')}/api/listview/$pluralType?limit=1000';
-      print('🌐 Fetching data from: $endpoint');
-      print('🔑 Using token: ${token.isNotEmpty ? '${token.substring(0, 10)}...' : 'Empty token'}');
-      print('🔀 Active sorting: $_sortingActive');
-
-      // Check if token exists
-      if (token.isEmpty) {
+    if (token.isEmpty) {
+      if (_activeType == type) {
         _error = 'Authentication required. Please log in.';
-        _items = [];
-        _filteredItems = [];
         _isLoading = false;
         _safeNotifyListeners();
-        return;
       }
+      return;
+    }
 
-      final response = await http.get(
-        Uri.parse(endpoint),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
+    final response = await http.get(
+      Uri.parse(endpoint),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
 
-      print('📤 Response status code: ${response.statusCode}');
+    print('📤 Response status code: ${response.statusCode} for type: $type');
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = json.decode(response.body);
+    if (_activeType != type) {
+      print('⚠️ Type changed during request, ignoring response for $type');
+      return;
+    }
+
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> responseData = json.decode(response.body);
+      try {
         final ApiResponse apiResponse = ApiResponse.fromJson(responseData);
 
-        // Store the list view ID for future filter requests
-        _currentListViewId = apiResponse.listview.id;
-        _currentResponse = apiResponse;
-        _error = null;
-
-        // Only replace items if sorting is not active
-        if (!wasSortingActive) {
-          _items = apiResponse.data;
-          _filteredItems = [];
-          _originalItems = List.from(_items); // Store original order
+        if (_activeType == type) {
+          _currentListViewId = apiResponse.listview.id;
+          _currentResponse = apiResponse;
           
-          // Apply default sorting if no specific sort is active
-          if (_sortColumn == null) {
-            _sortByCreationDate();
+          // CRITICAL: Check if we have active filters
+          if (_activeFilters.isNotEmpty) {
+            print('🔍 Active filters detected, re-applying filters to maintain filtered state');
+            // Don't update _items with unfiltered data, keep current filtered state
+            // The UI should show the filtered data, not the fresh unfiltered data
+            _error = null;
+            print('📊 Preserved filtered state with ${_filteredItems.length} filtered items');
+            print('📊 Active filters maintained: $_activeFilters');
+            
+            // Re-apply the filters to ensure server state matches
+            Map<String, String> filterMap = {};
+            _activeFilters.forEach((field, value) {
+              filterMap[field] = value.toString();
+            });
+            
+            // Re-apply filters without changing the UI state
+            _reapplyFiltersInBackground(filterMap, token, type);
+            
+          } else {
+            // No filters are active, load all data normally
+            _items = apiResponse.data;
+            _filteredItems = [];
+            _originalItems = List.from(_items);
+            
+            if (_sortColumn == null) {
+              _sortByCreationDate();
+            }
+            print('📊 Successfully loaded ${_items.length} items for $correctType (type: $type)');
           }
-        } else {
-          // If sorting was active, store the new data but keep our sorted order
-          print('🔀 Preserving sort order while updating data');
-          _originalItems = apiResponse.data;
           
-          // Re-apply the sort with the existing settings
-          _sortColumn = savedSortColumn;
-          _sortAscending = savedSortAscending;
-          if (_sortColumn != null) {
-            _applySorting();
+          _error = null;
+          print('📊 Active filters: $_activeFilters');
+        }
+        
+      } catch (parseError) {
+        if (_activeType == type) {
+          _error = 'Error parsing data: $parseError';
+          print('❌ Parse error for $type: $parseError');
+          if (_activeFilters.isEmpty) {
+            _items = [];
+            _filteredItems = [];
           }
         }
-
-        print('📊 Loaded ${_items.length} items');
-        print('📊 Visible columns: ${apiResponse.visibleColumns}');
-        print('📊 All columns count: ${apiResponse.allColumns.length}');
-        print('📊 ListView ID: $_currentListViewId');
-      } else if (response.statusCode == 401) {
-        _error = 'Authentication expired. Please log in again.';
-        _items = [];
-        _filteredItems = [];
-        _originalItems = [];
-      } else if (response.statusCode == 404) {
-        _error = 'No data found for this view.';
-        _items = [];
-        _filteredItems = [];
-        _originalItems = [];
-      } else {
-        _error = 'Failed to load data. Status code: ${response.statusCode}';
-        _items = [];
-        _filteredItems = [];
-        _originalItems = [];
       }
-    } catch (e) {
+    } else if (response.statusCode == 401) {
+      if (_activeType == type) {
+        _error = 'Authentication expired. Please log in again.';
+      }
+    } else if (response.statusCode == 404) {
+      if (_activeType == type) {
+        _error = 'No data found for this view.';
+      }
+    } else {
+      if (_activeType == type) {
+        _error = 'Failed to load data. Status code: ${response.statusCode}';
+      }
+    }
+  } catch (e) {
+    if (_activeType == type) {
       _error = 'Error occurred: $e';
-      _items = [];
-      _filteredItems = [];
-      _originalItems = [];
-      print('❌ Error fetching data: $e');
-    } finally {
+      print('❌ Error fetching data for $type: $e');
+    }
+  } finally {
+    if (_activeType == type) {
       _isLoading = false;
       _safeNotifyListeners();
     }
   }
+}
 
+Future<void> _reapplyFiltersInBackground(Map<String, String> filters, String token, String type) async {
+  try {
+    if (_currentListViewId == null) {
+      print('⚠️ No list view ID available for re-applying filters');
+      return;
+    }
+
+    // Build the filters array in the required format
+    List<Map<String, String>> filtersList = [];
+    filters.forEach((field, value) {
+      if (value.isNotEmpty) {
+        if (value.contains(':')) {
+          final parts = value.split(':');
+          final operator = parts[0];
+          final filterValue = parts.sublist(1).join(':');
+          
+          filtersList.add({
+            'field': field,
+            'operator': operator,
+            'value': filterValue
+          });
+        } else {
+          filtersList.add({
+            'field': field,
+            'operator': 'equals',
+            'value': value
+          });
+        }
+      }
+    });
+
+    final Map<String, dynamic> payload = {
+      'data': {
+        'filters': filtersList,
+        'filter_logic': '',
+        'id': _currentListViewId
+      }
+    };
+
+    print('🔍 Re-applying filters in background: ${json.encode(payload)}');
+
+    final response = await http.patch(
+      Uri.parse('${ApiConfig.baseUrl.replaceFirst('qa', 'dev')}/api/listview'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode(payload),
+    );
+
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> responseData = json.decode(response.body);
+      final ApiResponse apiResponse = ApiResponse.fromJson(responseData);
+
+      // Update the filtered items
+      _filteredItems = apiResponse.data;
+      _items = _filteredItems;
+      _currentResponse = apiResponse;
+
+      print('📊 Background filter re-application successful. Items: ${_filteredItems.length}');
+      _safeNotifyListeners();
+    } else {
+      print('❌ Background filter re-application failed: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('❌ Error in background filter re-application: $e');
+  }
+}
+// Updated applyFilters method - now fetches data after applying filter
+Future<void> applyFilters(Map<String, String> filters, String token, String type) async {
+  print('🔍 Applying filters: $filters');
+  
+  _isLoading = true;
+  _activeFilters = Map<String, dynamic>.from(filters);
+  _safeNotifyListeners();
+
+  try {
+    if (_currentListViewId == null) {
+      throw Exception('No list view ID available for filtering');
+    }
+
+    // Build filters array
+    List<Map<String, String>> filtersList = [];
+    filters.forEach((field, value) {
+      if (value.isNotEmpty) {
+        if (value.contains(':')) {
+          final parts = value.split(':');
+          final operator = parts[0];
+          final filterValue = parts.sublist(1).join(':');
+          
+          filtersList.add({
+            'field': field,
+            'operator': operator,
+            'value': filterValue
+          });
+        } else {
+          filtersList.add({
+            'field': field,
+            'operator': 'equals',
+            'value': value
+          });
+        }
+      }
+    });
+
+    final payload = {
+      'data': {
+        'filters': filtersList,
+        'filter_logic': '',
+        'id': _currentListViewId
+      }
+    };
+
+    print('🔍 Filter payload: ${json.encode(payload)}');
+
+    // Step 1: Apply the filter to the list view
+    final filterResponse = await http.patch(
+      Uri.parse('${ApiConfig.baseUrl.replaceFirst('qa', 'dev')}/api/listview'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode(payload),
+    );
+
+    if (filterResponse.statusCode != 200) {
+      throw Exception('Filter application failed: ${filterResponse.statusCode}');
+    }
+
+    print('✅ Filter applied to list view successfully');
+
+    // Step 2: Fetch the filtered data
+    await _fetchFilteredData(token, type);
+
+  } catch (e) {
+    _error = 'Error applying filters: $e';
+    print('❌ Filter error: $e');
+    // Reset filtered items on error
+    _filteredItems = [];
+    _activeFilters = {};
+  } finally {
+    _isLoading = false;
+    _safeNotifyListeners();
+  }
+}
+
+// New method to fetch filtered data
+Future<void> _fetchFilteredData(String token, String type) async {
+  try {
+    print('📡 Fetching filtered data for type: $type');
+    
+    // Use the same endpoint as loadData but it should now return filtered results
+    // since we just applied the filter to the list view
+    final response = await http.get(
+      Uri.parse('${ApiConfig.baseUrl.replaceFirst('qa', 'dev')}/api/$type/listview'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final dynamic responseData = json.decode(response.body);
+      
+      print('📡 Response type: ${responseData.runtimeType}');
+      print('📡 Response data: ${responseData.toString().substring(0, responseData.toString().length > 200 ? 200 : responseData.toString().length)}...');
+      
+      // Handle different response formats
+      if (responseData is List<dynamic>) {
+        // Direct array response - convert to DynamicModel list
+        _filteredItems = responseData.map((item) => DynamicModel.fromJson(
+          item as Map<String, dynamic>, 
+          []
+        )).toList().cast<DynamicModel>();
+        print('📊 Direct array response - Filtered data fetched successfully. Items: ${_filteredItems.length}');
+      } else if (responseData is Map<String, dynamic>) {
+        // Wrapped response
+        final ApiResponse apiResponse = ApiResponse.fromJson(responseData);
+        _filteredItems = apiResponse.data.map((item) => DynamicModel.fromJson(
+          item as Map<String, dynamic>, 
+          []
+        )).toList().cast<DynamicModel>();
+        _currentResponse = apiResponse;
+        print('📊 Wrapped response - Filtered data fetched successfully. Items: ${_filteredItems.length}');
+      } else {
+        throw Exception('Unexpected response format: ${responseData.runtimeType}');
+      }
+
+      _error = null;
+
+      // Re-apply sorting if it was active
+      if (_sortingActive && _sortColumn != null) {
+        _applySortingToFilteredData();
+      }
+      
+      // Debug: Log some sample filtered data
+      if (_filteredItems.isNotEmpty) {
+        final firstItem = _filteredItems.first;
+        // Access the raw JSON data from the first item
+        final itemData = (responseData is List<dynamic>) 
+          ? responseData.first as Map<String, dynamic>
+          : (responseData as Map<String, dynamic>)['data'][0] as Map<String, dynamic>;
+        print('📊 Sample filtered item keys: ${itemData.keys}');
+        // Try to find name field in the first item
+        if (itemData.containsKey('name')) {
+          print('📊 First item name: ${itemData['name']}');
+        }
+      } else {
+        print('📊 No items match the current filter criteria');
+      }
+      
+    } else {
+      print('❌ HTTP Error: ${response.statusCode}');
+      print('❌ Response body: ${response.body}');
+      throw Exception('Failed to fetch filtered data: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('❌ Error fetching filtered data: $e');
+    throw e; // Re-throw to be handled by the calling method
+  }
+}
+
+// Updated clearFilters method
+Future<void> clearFilters() async {
+  print('🔍 Clearing all filters');
+  
+  _isLoading = true;
+  _safeNotifyListeners();
+
+  try {
+    if (_currentListViewId == null) {
+      throw Exception('No list view ID available');
+    }
+
+    final payload = {
+      'data': {
+        'filters': [],
+        'filter_logic': '',
+        'id': _currentListViewId
+      }
+    };
+
+    // Step 1: Clear filters on the server
+    final response = await http.patch(
+      Uri.parse('${ApiConfig.baseUrl.replaceFirst('qa', 'dev')}/api/listview'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode(payload),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Clear filters failed: ${response.statusCode}');
+    }
+
+    print('✅ Filters cleared on server');
+
+    // Step 2: Fetch all data (now unfiltered)
+    await _fetchAllData(_token, _type);
+    
+    // Step 3: Clear local filter state
+    _activeFilters = {};
+    _filteredItems = [];
+    
+    print('📊 Filters cleared. Items restored: ${_items.length}');
+    
+  } catch (e) {
+    // Clear local state even if server request fails
+    _activeFilters = {};
+    _filteredItems = [];
+    _error = 'Error clearing filters: $e';
+    print('❌ Clear filters error: $e');
+  } finally {
+    _isLoading = false;
+    _safeNotifyListeners();
+  }
+}
+
+// Helper method to fetch all data (used by clearFilters)
+Future<void> _fetchAllData(String token, String type) async {
+  try {
+    final response = await http.get(
+      Uri.parse('${ApiConfig.baseUrl.replaceFirst('qa', 'dev')}/api/$type/listview'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final dynamic responseData = json.decode(response.body);
+      
+      // Handle different response formats
+      if (responseData is List<dynamic>) {
+        // Direct array response - convert to DynamicModel list
+        _items = responseData.map((item) => DynamicModel.fromJson(
+          item as Map<String, dynamic>, 
+          []
+        )).toList().cast<DynamicModel>();
+        _originalItems = responseData.map((item) => DynamicModel.fromJson(
+          item as Map<String, dynamic>, 
+          []
+        )).toList().cast<DynamicModel>();
+        print('📊 Direct array response - All data fetched successfully. Items: ${_items.length}');
+      } else if (responseData is Map<String, dynamic>) {
+        // Wrapped response
+        final ApiResponse apiResponse = ApiResponse.fromJson(responseData);
+        _items = apiResponse.data.map((item) => DynamicModel.fromJson(
+          item as Map<String, dynamic>, 
+          []
+        )).toList().cast<DynamicModel>();
+        _originalItems = apiResponse.data.map((item) => DynamicModel.fromJson(
+          item as Map<String, dynamic>, 
+          []
+        )).toList().cast<DynamicModel>();
+        _currentResponse = apiResponse;
+        print('📊 Wrapped response - All data fetched successfully. Items: ${_items.length}');
+      } else {
+        throw Exception('Unexpected response format: ${responseData.runtimeType}');
+      }
+
+      _error = null;
+
+      // Re-apply default sorting
+      _sortByCreationDate();
+      
+    } else {
+      throw Exception('Failed to fetch all data: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('❌ Error fetching all data: $e');
+    throw e;
+  }
+}
+
+// Keep the same items getter as before
+List<DynamicModel> get items {
+  // Return filtered items if filters are active, otherwise return all items
+  if (_activeFilters.isNotEmpty && _filteredItems.isNotEmpty) {
+    return _filteredItems;
+  } else if (_activeFilters.isNotEmpty && _filteredItems.isEmpty) {
+    // If filters are active but no results, return empty list
+    return <DynamicModel>[];
+  } else {
+    // No filters active, return all items
+    return _items;
+  }
+}
+
+
+List<DynamicModel> getItemsForType(String type) {
+  if (_activeType != type) {
+    print('⚠️ Requested items for $type but provider is serving $_activeType');
+    return [];
+  }
+  
+  if (_activeFilters.isNotEmpty) {
+    return _filteredItems;
+  } else {
+    return _items;
+  }
+}
   // Extract sorting by creation date into a separate method for reuse
   void _sortByCreationDate() {
     print('📅 Sorting ${_items.length} items by creation date');
@@ -431,187 +877,24 @@ class DataProvider with ChangeNotifier {
   }
 
   // FIX: Updated to correctly handle filtered results
-  Future<void> applyFilters(Map<String, String> filters, String token, String type) async {
-    _isLoading = true;
-    _activeFilters = Map<String, dynamic>.from(filters);
-    _safeNotifyListeners();
-
-    try {
-      // Only proceed if we have a valid list view ID
-      if (_currentListViewId == null) {
-        _error = 'No list view ID available for filtering';
-        _isLoading = false;
-        _safeNotifyListeners();
-        return;
-      }
-
-      // Build the filters array in the required format
-      List<Map<String, String>> filtersList = [];
-      filters.forEach((field, value) {
-        if (value.isNotEmpty) {
-          // Check if value contains operator (format: "operator:value")
-          if (value.contains(':')) {
-            final parts = value.split(':');
-            final operator = parts[0];
-            final filterValue = parts.sublist(1).join(':');
-            
-            filtersList.add({
-              'field': field,
-              'operator': operator,
-              'value': filterValue
-            });
-          } else {
-            // Default to equals if no operator specified
-            filtersList.add({
-              'field': field,
-              'operator': 'equals',
-              'value': value
-            });
-          }
-        }
-      });
-
-      // Construct the payload as per API requirements
-      final Map<String, dynamic> payload = {
-        'data': {
-          'filters': filtersList,
-          'filter_logic': '',
-          'id': _currentListViewId
-        }
-      };
-
-      print('🔍 Applying filters with payload: ${json.encode(payload)}');
-
-      // Send the PATCH request to the correct base URL
-      final response = await http.patch(
-        Uri.parse('${ApiConfig.baseUrl.replaceFirst('qa', 'dev')}/api/listview'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode(payload),
-      );
-
-      print('📤 Filter response status code: ${response.statusCode}');
-      print('📤 Filter response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = json.decode(response.body);
-        final ApiResponse apiResponse = ApiResponse.fromJson(responseData);
-
-        // Critical fix - update both filtered items and the main items list
-        _filteredItems = apiResponse.data;
-        _items = _filteredItems; // This ensures data is available immediately
-        _currentResponse = apiResponse;
-        _error = null;
-
-        print('📊 Applied filters. Items count after filtering: ${_filteredItems.length}');
-      } else {
-        _error = 'Failed to apply filters. Status code: ${response.statusCode}';
-        print('❌ Error applying filters: ${response.body}');
-      }
-    } catch (e) {
-      _error = 'Error applying filters: $e';
-      print('❌ Error applying filters: $e');
-    } finally {
-      _isLoading = false;
-      _safeNotifyListeners();
-    }
-  }
   
-  // FIX: Updated to properly handle clearing filters
-  Future<void> clearFilters() async {
-    _isLoading = true;
-    _safeNotifyListeners();
-
-    try {
-      // Only proceed if we have a valid list view ID
-      if (_currentListViewId == null) {
-        _error = 'No list view ID available for clearing filters';
-        _isLoading = false;
-        _activeFilters = {};
-        _filteredItems = [];
-        _safeNotifyListeners();
-        return;
-      }
-
-      // Create empty filter payload as per API requirements
-      final Map<String, dynamic> payload = {
-        'data': {
-          'filters': [],
-          'filter_logic': '',
-          'id': _currentListViewId
-        }
-      };
-
-      print('🔍 Clearing filters on server for listview: $_currentListViewId');
-
-      // Send the PATCH request to the correct base URL
-      final response = await http.patch(
-        Uri.parse('${ApiConfig.baseUrl.replaceFirst('qa', 'dev')}/api/listview'),
-        headers: {
-          'Authorization': 'Bearer $_token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode(payload),
-      );
-
-      print('📤 Clear filter response status code: ${response.statusCode}');
-      print('📤 Clear filter response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = json.decode(response.body);
-        final ApiResponse apiResponse = ApiResponse.fromJson(responseData);
-
-        // Critical fix - clear state completely
-        _activeFilters = {};
-        _filteredItems = [];
-        _items = apiResponse.data;
-        _currentResponse = apiResponse;
-        _error = null;
-
-        // Apply default sorting
-        _sortByCreationDate();
-
-        print('📊 Cleared filters. Items count: ${_items.length}');
-      } else {
-        _error = 'Failed to clear filters. Status code: ${response.statusCode}';
-        print('❌ Error clearing filters: ${response.body}');
-        
-        // Even if server request fails, clear local filters
-        _activeFilters = {};
-        _filteredItems = [];
-      }
-    } catch (e) {
-      _error = 'Error occurred while clearing filters: $e';
-      print('❌ Error clearing filters: $e');
-      
-      // Even if an exception occurs, clear local filters
-      _activeFilters = {};
-      _filteredItems = [];
-    } finally {
-      _isLoading = false;
-      _safeNotifyListeners();
-    }
-  }
+  
   
   // Add this method to your DataProvider class
   void applySortWithDirection(String column, bool ascending) {
-    print('🔀 Applying sort on column: $column (ascending: $ascending)');
-    
-    // Store the sort parameters
-    _sortColumn = column;
-    _sortAscending = ascending;
-    _sortingActive = true;
-    
-    // Store original items if not already stored
-    if (_originalItems.isEmpty) {
-      _originalItems = List.from(_items);
-    }
-    
-    // Apply the sorting
-    _applySorting();
+  print('🔀 Applying sort: $column (ascending: $ascending)');
+  
+  _sortColumn = column;
+  _sortAscending = ascending;
+  _sortingActive = true;
+  
+  // Apply sorting to current data (filtered or unfiltered)
+  if (_activeFilters.isNotEmpty && _filteredItems.isNotEmpty) {
+    _applySortingToFilteredData();
+  } else {
+    _applySortingToAllData();
   }
+}
   
   // Apply sorting based on column
   void applySort(String column) {
@@ -627,47 +910,83 @@ class DataProvider with ChangeNotifier {
   }
 
   void clearSort() {
-    print('🔀 Clearing sort');
-    _sortColumn = null;
-    _sortAscending = true;
-    _sortingActive = false;
-
-    // Restore original items if available
+  print('🔀 Clearing sort');
+  
+  _sortColumn = null;
+  _sortAscending = true;
+  _sortingActive = false;
+  
+  // Restore data without sorting
+  if (_activeFilters.isNotEmpty) {
+    // If filters are active, we need to re-apply them without sorting
+    // For now, just notify listeners - the filtered data remains
+    print('🔀 Sort cleared but filters remain active');
+  } else {
+    // Restore original order
     if (_originalItems.isNotEmpty) {
       _items = List.from(_originalItems);
-      
-      // Also restore filtered items if needed
-      if (_activeFilters.isNotEmpty && _filteredItems.isNotEmpty) {
-        // Re-apply filters on original data
-        _filteredItems = _items.where((item) {
-          // Simple filtering implementation - customize as needed
-          return _activeFilters.entries.every((entry) {
-            String field = entry.key;
-            dynamic filterValue = entry.value;
-            String itemValue = item.getStringAttribute(field).toLowerCase();
-            
-            if (filterValue is String && filterValue.contains(':')) {
-              List<String> parts = filterValue.split(':');
-              String operator = parts[0];
-              String value = parts.sublist(1).join(':').toLowerCase();
-              
-              switch (operator) {
-                case 'equals': return itemValue == value;
-                case 'contains': return itemValue.contains(value);
-                case 'starts_with': return itemValue.startsWith(value);
-                default: return itemValue == value;
-              }
-            } else if (filterValue != null) {
-              return itemValue.contains(filterValue.toString().toLowerCase());
-            }
-            return true;
-          });
-        }).toList();
+      _sortByCreationDate(); // Apply default sort
+    }
+  }
+  
+  _safeNotifyListeners();
+}
+
+void _applySortingToAllData() {
+  if (_items.isEmpty || _sortColumn == null) return;
+  
+  List<DynamicModel> sortedItems = List.from(_items);
+  _performSort(sortedItems);
+  _items = sortedItems;
+  _safeNotifyListeners();
+}
+
+void _applySortingToFilteredData() {
+  if (_filteredItems.isEmpty || _sortColumn == null) return;
+  
+  List<DynamicModel> sortedItems = List.from(_filteredItems);
+  _performSort(sortedItems);
+  _filteredItems = sortedItems;
+  _safeNotifyListeners();
+}
+
+void _performSort(List<DynamicModel> items) {
+  if (_sortColumn == null) return;
+  
+  items.sort((a, b) {
+    String valA = a.getStringAttribute(_sortColumn!);
+    String valB = b.getStringAttribute(_sortColumn!);
+    
+    // Handle empty values
+    if (valA.isEmpty && valB.isEmpty) return 0;
+    if (valA.isEmpty) return _sortAscending ? 1 : -1;
+    if (valB.isEmpty) return _sortAscending ? -1 : 1;
+    
+    // Try date comparison first
+    if (_isDateValue(valA) && _isDateValue(valB)) {
+      try {
+        DateTime dtA = DateTime.parse(valA);
+        DateTime dtB = DateTime.parse(valB);
+        return _sortAscending ? dtA.compareTo(dtB) : dtB.compareTo(dtA);
+      } catch (e) {
+        // Fall through to string comparison
       }
     }
     
-    _safeNotifyListeners();
-  }
+    // Try numeric comparison
+    double? numA = double.tryParse(valA);
+    double? numB = double.tryParse(valB);
+    
+    if (numA != null && numB != null) {
+      return _sortAscending ? numA.compareTo(numB) : numB.compareTo(numA);
+    }
+    
+    // String comparison
+    return _sortAscending ? 
+      valA.toLowerCase().compareTo(valB.toLowerCase()) : 
+      valB.toLowerCase().compareTo(valA.toLowerCase());
+  });
+}
 
   // Apply sorting only (keep separate from filtering now)
   void _applySorting() {
@@ -803,185 +1122,216 @@ class DataProvider with ChangeNotifier {
   }
 
   // Rest of the methods (createItem, updateItem) remain unchanged
-  Future<Map<String, dynamic>> createItem(String type, Map<String, dynamic> formData, String token) async {
-    String endpoint = 'https://qa.api.bussus.com/v2/api/$type';
-    _isLoading = true;
-    _safeNotifyListeners();
+  
+ Future<Map<String, dynamic>> updateItem(String type, String itemId, Map<String, dynamic> formData, String token) async {
+  // Ensure type is in plural form
+  final correctType = _getCorrectType(type);
+  
+  // Use ApiConfig for base URL
+  String endpoint = '${ApiConfig.baseUrl}/api/$correctType/$itemId';
+  
+  _isLoading = true;
+  _safeNotifyListeners();
 
-    try {
-      print('🌐 Creating new $type with data: ${formData.keys.join(', ')}');
+  try {
+    print('🌐 Updating $correctType with ID: $itemId');
+    print('🌐 Update data: ${formData.keys.join(', ')}');
 
-      // Check if token exists
-      if (token.isEmpty) {
-        _error = 'Authentication required. Please log in.';
-        _isLoading = false;
-        _safeNotifyListeners();
-        return {'success': false, 'message': _error};
-      }
-
-      // IMPORTANT: Properly nest the form data under "data" key
-      final requestBody = {
-        "data": formData
-      };
-
-      print('📦 Request body: ${json.encode(requestBody)}');
-
-      final response = await http.post(
-        Uri.parse(endpoint),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode(requestBody),
-      );
-
-      print('📤 Create response status code: ${response.statusCode}');
-      print('📤 Create response body: ${response.body}');
-
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        // Instead of reloading data, let's fetch just the new item if possible
-        try {
-          Map<String, dynamic> responseData = json.decode(response.body);
-          if (responseData.containsKey('data') && responseData['data'] is Map<String, dynamic>) {
-            // Create a new DynamicModel from the response data
-            final newItem = DynamicModel.fromJson(responseData['data'], responseData['visible_columns'] ?? []);
-
-            // Add the new item to the beginning of the list
-            _items.insert(0, newItem);
-
-            // Re-sort the list to ensure the new item is in the correct position
-            _sortByCreationDate();
-
-            // Update filtered items if necessary
-            if (_filteredItems.isNotEmpty) {
-              _applySorting();
-            }
-
-            _safeNotifyListeners();
-            return {'success': true};
-          }
-        } catch (e) {
-          print('⚠️ Could not parse response data: $e');
-        }
-
-        // Fallback: refresh data if we can't extract the new item
-        await loadData(type, token);
-        return {'success': true};
-      } else {
-        Map<String, dynamic> responseData = {};
-        try {
-          responseData = json.decode(response.body);
-        } catch (e) {
-          print('❌ Failed to parse error response: $e');
-        }
-
-        String errorMsg = responseData['message'] ?? 'Failed to create item. Status code: ${response.statusCode}';
-        _error = errorMsg;
-        _safeNotifyListeners();
-        return {'success': false, 'message': errorMsg};
-      }
-    } catch (e) {
-      String errorMsg = 'Error occurred: $e';
-      _error = errorMsg;
-      print('❌ Error creating data: $e');
-      _safeNotifyListeners();
-      return {'success': false, 'message': errorMsg};
-    } finally {
+    // Check if token exists
+    if (token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
       _isLoading = false;
       _safeNotifyListeners();
+      return {'success': false, 'message': _error};
     }
-  }
 
-  Future<Map<String, dynamic>> updateItem(String type, String itemId, Map<String, dynamic> formData, String token) async {
-    String endpoint = 'https://qa.api.bussus.com/v2/api/$type/$itemId';
-    _isLoading = true;
-    _safeNotifyListeners();
+    // Nest the form data under "data" key
+    final requestBody = {
+      "data": formData
+    };
 
-    try {
-      print('🌐 Updating $type with ID: $itemId');
-      print('🌐 Update data: ${formData.keys.join(', ')}');
+    print('📦 Request body: ${json.encode(requestBody)}');
 
-      // Check if token exists
-      if (token.isEmpty) {
-        _error = 'Authentication required. Please log in.';
-        _isLoading = false;
-        _safeNotifyListeners();
-        return {'success': false, 'message': _error};
-      }
+    final response = await http.patch(
+      Uri.parse(endpoint),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode(requestBody),
+    );
 
-      // Nest the form data under "data" key
-      final requestBody = {
-        "data": formData
-      };
+    print('📤 Update response status code: ${response.statusCode}');
+    print('📤 Update response body: ${response.body}');
 
-      print('📦 Request body: ${json.encode(requestBody)}');
-
-      final response = await http.patch(
-        Uri.parse(endpoint),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode(requestBody),
-      );
-
-      print('📤 Update response status code: ${response.statusCode}');
-      print('📤 Update response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        // Try to update the item in place if possible
-        try {
-          Map<String, dynamic> responseData = json.decode(response.body);
-          if (responseData.containsKey('data') && responseData['data'] is Map<String, dynamic>) {
-            // Find the item in our list
-            int itemIndex = _items.indexWhere((item) => item.id == itemId);
-            if (itemIndex >= 0) {
-              // Update the item in our list
-              _items[itemIndex] = DynamicModel.fromJson(responseData['data'], responseData['visible_columns'] ?? []);
-
-              // Re-sort the list to ensure the updated item is in the correct position
-              _sortByCreationDate();
-
-              // Update filtered items if necessary
-              if (_filteredItems.isNotEmpty) {
-                _applySorting();
+    if (response.statusCode == 200) {
+      // Parse the response
+      Map<String, dynamic> responseData = json.decode(response.body);
+      
+      // **FIX: Check for errors first - even when success is true**
+      if (responseData.containsKey('errors') && 
+          responseData['errors'] is List && 
+          responseData['errors'].isNotEmpty) {
+        
+        // Handle errors from the response
+        var errorList = responseData['errors'] as List;
+        String errorMsg = '';
+        
+        for (var error in errorList) {
+          if (error is Map<String, dynamic>) {
+            String errorDetail = error['error'] ?? 'Unknown error';
+            print('❌ Database error: $errorDetail');
+            
+            // Extract user-friendly error message
+            if (errorDetail.contains('foreign key constraint')) {
+              if (errorDetail.contains('converted_account_id_fkey')) {
+                errorMsg = 'The selected account "${formData['converted_account_id']}" does not exist. Please choose a valid account.';
+              } else if (errorDetail.contains('created_by_id_fkey')) {
+                errorMsg = 'The user "${formData['created_by_id']}" does not exist in the system.';
+              } else if (errorDetail.contains('owner_id_fkey')) {
+                errorMsg = 'The selected owner does not exist. Please choose a valid owner.';
+              } else if (errorDetail.contains('partner_account_id_fkey')) {
+                errorMsg = 'The selected partner account does not exist.';
+              } else {
+                errorMsg = 'Invalid reference data. Please check your selections.';
               }
-
-              _safeNotifyListeners();
-              return {'success': true};
+            } else {
+              errorMsg = errorDetail;
             }
+            break; // Use first error
           }
-        } catch (e) {
-          print('⚠️ Could not parse response data: $e');
         }
-
-        // Fallback: refresh data if we can't update the item in place
-        await loadData(type, token);
-        return {'success': true};
-      } else {
-        Map<String, dynamic> responseData = {};
-        try {
-          responseData = json.decode(response.body);
-        } catch (e) {
-          print('❌ Failed to parse response: $e');
-        }
-
-        String errorMsg = responseData['message'] ?? 'Failed to update item. Status code: ${response.statusCode}';
+        
         _error = errorMsg;
+        _isLoading = false;
         _safeNotifyListeners();
         return {'success': false, 'message': errorMsg};
       }
-    } catch (e) {
-      String errorMsg = 'Error occurred: $e';
+      
+      // Check if we have updated_records in the response
+      if (responseData.containsKey('updated_records') && 
+          responseData['updated_records'] is List && 
+          responseData['updated_records'].isNotEmpty) {
+        
+        var updatedRecord = responseData['updated_records'][0];
+        var updatedData = updatedRecord['updated_data'];
+        
+        print('📝 Processing updated record with data: ${updatedData.keys.join(', ')}');
+        
+        // Update the item in all lists
+        _updateItemInLists(itemId, updatedData);
+        
+        print('📝 Item update completed successfully');
+        _error = null;
+        _safeNotifyListeners();
+        return {'success': true};
+        
+      } else if (responseData.containsKey('success') && responseData['success'] == true) {
+        // **FIX: Handle case where success is true but no updated_records**
+        // This means the update was successful, update UI with form data
+        _updateItemInLists(itemId, formData);
+        
+        print('📝 Updated item using form data (success without updated_records)');
+        _error = null;
+        _safeNotifyListeners();
+        return {'success': true};
+        
+      } else if (responseData.containsKey('data')) {
+        // Fallback for different response format
+        print('📝 Using fallback response format');
+        _updateItemInLists(itemId, responseData['data']);
+        _error = null;
+        _safeNotifyListeners();
+        return {'success': true};
+        
+      } else {
+        // If we can't parse the response properly, reload the data
+        print('⚠️ Could not parse update response, reloading data...');
+        await loadData(type, token);
+        return {'success': true};
+      }
+    } else {
+      Map<String, dynamic> responseData = {};
+      try {
+        responseData = json.decode(response.body);
+      } catch (e) {
+        print('❌ Failed to parse error response: $e');
+      }
+
+      String errorMsg = responseData['message'] ?? 'Failed to update item. Status code: ${response.statusCode}';
       _error = errorMsg;
-      print('❌ Error updating data: $e');
       _safeNotifyListeners();
       return {'success': false, 'message': errorMsg};
-    } finally {
-      _isLoading = false;
-      _safeNotifyListeners();
+    }
+  } catch (e) {
+    String errorMsg = 'Error occurred: $e';
+    _error = errorMsg;
+    print('❌ Error updating data: $e');
+    _safeNotifyListeners();
+    return {'success': false, 'message': errorMsg};
+  } finally {
+    _isLoading = false;
+    _safeNotifyListeners();
+  }
+}
+
+// **NEW: Helper method to update item in all lists**
+void _updateItemInLists(String itemId, Map<String, dynamic> updatedData) {
+  // Update main items list
+  int itemIndex = _items.indexWhere((item) => item.id == itemId);
+  if (itemIndex >= 0) {
+    print('📝 Found item at index $itemIndex, updating...');
+    
+    var existingItem = _items[itemIndex];
+    var newItemData = Map<String, dynamic>.from(existingItem.attributes);
+    
+    // Update with new data
+    updatedData.forEach((key, value) {
+      newItemData[key] = value;
+    });
+    
+    // Ensure ID is preserved
+    newItemData['id'] = itemId;
+    
+    // Create new DynamicModel
+    _items[itemIndex] = DynamicModel.fromJson(newItemData, visibleColumns);
+    print('📝 Updated item in main list successfully');
+  }
+  
+  // Update filtered items
+  if (_activeFilters.isNotEmpty && _filteredItems.isNotEmpty) {
+    int filteredIndex = _filteredItems.indexWhere((item) => item.id == itemId);
+    if (filteredIndex >= 0) {
+      var existingFilteredItem = _filteredItems[filteredIndex];
+      var newFilteredItemData = Map<String, dynamic>.from(existingFilteredItem.attributes);
+      
+      updatedData.forEach((key, value) {
+        newFilteredItemData[key] = value;
+      });
+      newFilteredItemData['id'] = itemId;
+      
+      _filteredItems[filteredIndex] = DynamicModel.fromJson(newFilteredItemData, visibleColumns);
+      print('📝 Updated item in filtered list successfully');
     }
   }
+  
+  // Update original items
+  if (_originalItems.isNotEmpty) {
+    int originalIndex = _originalItems.indexWhere((item) => item.id == itemId);
+    if (originalIndex >= 0) {
+      var existingOriginalItem = _originalItems[originalIndex];
+      var newOriginalItemData = Map<String, dynamic>.from(existingOriginalItem.attributes);
+      
+      updatedData.forEach((key, value) {
+        newOriginalItemData[key] = value;
+      });
+      newOriginalItemData['id'] = itemId;
+      
+      _originalItems[originalIndex] = DynamicModel.fromJson(newOriginalItemData, visibleColumns);
+      print('📝 Updated item in original list successfully');
+    }
+  }
+}
 
   Future<bool> forceRefreshData(String token, String type) async {
     if (_currentListViewId == null) {
@@ -1050,7 +1400,7 @@ Future<Map<String, dynamic>> fetchTaskDetails(String taskId, String token) async
     }
 
     // Construct the URL for the task details API
-    final url = 'https://qa.api.bussus.com/v2/api/task?id=$taskId';
+    final url = 'https://dev.api.bussus.com/v2/api/task?id=$taskId';
 
     print('🌐 Fetching task details from: $url');
 
@@ -1177,12 +1527,16 @@ Future<Map<String, dynamic>> deleteTask(String taskId, String token) async {
 
   // Add this method to your DataProvider class
 Future<Map<String, dynamic>> getFormPreview(String type, String token) async {
-  String endpoint = 'https://qa.api.bussus.com/v2/api/$type/preview';
+  // Apply plural form to resource type
+  String correctType = _getCorrectType(type);
+  
+  // Use ApiConfig.baseUrl instead of hardcoded URL
+  String endpoint = '${ApiConfig.baseUrl}/api/$correctType/preview';
   _isLoading = true;
   _safeNotifyListeners();
 
   try {
-    print('🌐 Fetching form preview for $type');
+    print('🌐 Fetching form preview for $type from: $endpoint');
 
     // Check if token exists
     if (token.isEmpty) {
@@ -1202,7 +1556,6 @@ Future<Map<String, dynamic>> getFormPreview(String type, String token) async {
 
     print('📤 Form preview response status code: ${response.statusCode}');
     
-    // Add this detailed logging
     if (response.statusCode == 200) {
       final responseBody = response.body;
       print('📤 Form preview raw response: $responseBody');
@@ -1318,6 +1671,8 @@ Future<List<ColumnInfo>> getColumns(String type) async {
           String values = '';
           if (fieldName == 'status') {
             values = 'New,In Progress,Completed,Cancelled';
+          } else if (fieldName == 'rating') {
+            values = 'hot,warm,cold';
           }
           
           columns.add(ColumnInfo(
@@ -1325,7 +1680,7 @@ Future<List<ColumnInfo>> getColumns(String type) async {
             label: label,
             datatype: datatype,
             required: required,
-            values: values,
+            values: [],
           ));
         }
         
@@ -1388,11 +1743,104 @@ Future<List<FormSection>> getFormLayout(String type) async {
   }
 }
 
-// Add this method to your DataProvider class in data_provider.dart
+Future<Map<String, dynamic>> createItem(String type, Map<String, dynamic> formData, String token) async {
+  // Apply plural form to resource type
+  String correctType = _getCorrectType(type);
+  
+  // Use ApiConfig.baseUrl instead of hardcoded URL
+  String endpoint = '${ApiConfig.baseUrl}/api/$correctType';
+  _isLoading = true;
+  _safeNotifyListeners();
 
+  try {
+    print('🌐 Creating new $type with data: ${formData.keys.join(', ')}');
+
+    // Check if token exists
+    if (token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'message': _error};
+    }
+
+    // IMPORTANT: Properly nest the form data under "data" key
+    final requestBody = {
+      "data": formData
+    };
+
+    print('📦 Request body: ${json.encode(requestBody)}');
+
+    final response = await http.post(
+      Uri.parse(endpoint),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode(requestBody),
+    );
+
+    print('📤 Create response status code: ${response.statusCode}');
+    print('📤 Create response body: ${response.body}');
+
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      // Instead of reloading data, let's fetch just the new item if possible
+      try {
+        Map<String, dynamic> responseData = json.decode(response.body);
+        if (responseData.containsKey('data') && responseData['data'] is Map<String, dynamic>) {
+          // Create a new DynamicModel from the response data
+          final newItem = DynamicModel.fromJson(responseData['data'], responseData['visible_columns'] ?? []);
+
+          // Add the new item to the beginning of the list
+          _items.insert(0, newItem);
+
+          // Re-sort the list to ensure the new item is in the correct position
+          _sortByCreationDate();
+
+          // Update filtered items if necessary
+          if (_filteredItems.isNotEmpty) {
+            _applySorting();
+          }
+
+          _safeNotifyListeners();
+          return {'success': true};
+        }
+      } catch (e) {
+        print('⚠️ Could not parse response data: $e');
+      }
+
+      // Fallback: refresh data if we can't extract the new item
+      await loadData(type, token);
+      return {'success': true};
+    } else {
+      Map<String, dynamic> responseData = {};
+      try {
+        responseData = json.decode(response.body);
+      } catch (e) {
+        print('❌ Failed to parse error response: $e');
+      }
+
+      String errorMsg = responseData['message'] ?? 'Failed to create item. Status code: ${response.statusCode}';
+      _error = errorMsg;
+      _safeNotifyListeners();
+      return {'success': false, 'message': errorMsg};
+    }
+  } catch (e) {
+    String errorMsg = 'Error occurred: $e';
+    _error = errorMsg;
+    print('❌ Error creating data: $e');
+    _safeNotifyListeners();
+    return {'success': false, 'message': errorMsg};
+  } finally {
+    _isLoading = false;
+    _safeNotifyListeners();
+  }
+}
+
+// Add this method to your DataProvider class in data_provider.dart
 Future<Map<String, dynamic>> fetchItemPreview(String type, String itemId, String token) async {
   try {
-    final url = 'https://qa.api.bussus.com/v2/api/$type/preview?id=$itemId';
+    final correctType = _getCorrectType(type);
+    final url = '${ApiConfig.baseUrl}/api/$correctType/preview?id=$itemId';
     
     print('🌐 Fetching item preview from: $url');
     
@@ -1418,35 +1866,26 @@ Future<Map<String, dynamic>> fetchItemPreview(String type, String itemId, String
     throw Exception('Error fetching item preview: $e');
   }
 }
+
 // Add these new methods to your existing DataProvider class
+// Add this method to your DataProvider class:
 
 Future<Map<String, dynamic>> fetchItemDetails(String type, String itemId) async {
-  _isLoading = true;
-  _error = null;
-  _safeNotifyListeners();
-
-  Map<String, dynamic> result = {
-    'data': {},
-    'all_columns': [],
-    'visible_columns': [],
-    'layout': {'sections': []},
-    'tasks': [],
-  };
-
   try {
+    // Ensure type is in correct format
+    final correctType = _getCorrectType(type);
+    
+    // Use dev endpoint instead of qa
+    String endpoint = '${ApiConfig.baseUrl.replaceFirst('qa', 'dev')}/api/$correctType/preview?id=$itemId';
+    
+    print('🌐 Fetching details from: $endpoint');
+
     if (_token.isEmpty) {
-      _error = 'Authentication required. Please log in.';
-      _isLoading = false;
-      _safeNotifyListeners();
-      return result;
+      throw Exception('Authentication required. Please log in.');
     }
 
-    // Construct the URL for the details API
-    final url = 'https://qa.api.bussus.com/v2/api/$type/preview?id=$itemId';
-    print('🌐 Fetching details from: $url');
-
     final response = await http.get(
-      Uri.parse(url),
+      Uri.parse(endpoint),
       headers: {
         'Authorization': 'Bearer $_token',
         'Content-Type': 'application/json',
@@ -1454,28 +1893,73 @@ Future<Map<String, dynamic>> fetchItemDetails(String type, String itemId) async 
     );
 
     print('📤 Details response status code: ${response.statusCode}');
-    
+
     if (response.statusCode == 200) {
-      result = json.decode(response.body);
-      _error = null;
+      final Map<String, dynamic> responseData = json.decode(response.body);
+      
       print('📄 Successfully fetched item details');
+      
+      // Extract and log key information
+      if (responseData.containsKey('data')) {
+        final itemData = responseData['data'];
+        if (itemData is Map<String, dynamic>) {
+          print('📄 Item name: ${itemData['name'] ?? 'N/A'}');
+          print('📄 Last modified: ${itemData['last_modified_date'] ?? 'N/A'}');
+        }
+      }
+      
+      // Log activities count
+      if (responseData.containsKey('tasks')) {
+        final tasks = responseData['tasks'];
+        if (tasks is List) {
+          print('📊 Loaded ${tasks.length} activities from preview response');
+        }
+      }
+      
+      // Log related data count
+      if (responseData.containsKey('related_data')) {
+        final relatedData = responseData['related_data'];
+        if (relatedData is Map) {
+          print('📊 Loaded related data: ${relatedData.keys.length} relationships');
+        }
+      }
+      
+      // Log attachments count
+      if (responseData.containsKey('attachments')) {
+        final attachments = responseData['attachments'];
+        if (attachments is List) {
+          print('📊 Loaded ${attachments.length} attachments');
+        }
+      }
+      
+      // Log history count
+      if (responseData.containsKey('history')) {
+        final history = responseData['history'];
+        if (history is List) {
+          print('📊 Loaded ${history.length} history records');
+        }
+      }
+      
+      _error = null;
+      return responseData;
     } else if (response.statusCode == 401) {
       _error = 'Authentication expired. Please log in again.';
-      print('⚠️ Authentication expired');
+      throw Exception(_error);
+    } else if (response.statusCode == 404) {
+      _error = 'Item not found.';
+      throw Exception(_error);
     } else {
-      _error = 'Failed to load details. Status code: ${response.statusCode}';
-      print('❌ Failed to load details: ${response.body}');
+      _error = 'Failed to load item details. Status code: ${response.statusCode}';
+      throw Exception(_error);
     }
   } catch (e) {
     _error = 'Error occurred: $e';
-    print('❌ Error fetching details: $e');
-  } finally {
-    _isLoading = false;
-    _safeNotifyListeners();
+    print('❌ Error fetching item details: $e');
+    throw Exception(_error);
   }
-  
-  return result;
 }
+ 
+
 
 Future<bool> deleteItem(String type, String itemId) async {
   _isLoading = true;
@@ -1490,7 +1974,8 @@ Future<bool> deleteItem(String type, String itemId) async {
       return false;
     }
     
-    final url = 'https://qa.api.bussus.com/v2/api/$type';
+    final correctType = _getCorrectType(type);
+    final url = '${ApiConfig.baseUrl}/api/$correctType';
     
     print('🗑️ Attempting to delete item from: $url');
     print('🗑️ Item ID to delete: $itemId');
@@ -1777,8 +2262,7 @@ Future<Map<String, dynamic>> updateFileName(Map<String, dynamic> data) async {
   return result;
 }
 
-
- Future<Map<String, dynamic>> createTask(Map<String, dynamic> taskData, String token) async {
+Future<Map<String, dynamic>> createTask(Map<String, dynamic> taskData, String token) async {
   _isLoading = true;
   _error = null;
   _safeNotifyListeners();
@@ -1791,17 +2275,17 @@ Future<Map<String, dynamic>> updateFileName(Map<String, dynamic> data) async {
       return {'success': false, 'error': _error};
     }
     
-    final url = 'https://qa.api.bussus.com/v2/api/lead/task';
+    // Using the correct API endpoint
+    // final pluralType = _ensurePluralType(type);
+    final url = 'https://dev.api.bussus.com/v2/api/leads/task';
     
-    // Restructure the task data to match the expected format
+    // Restructuring the data to match exactly the required format
     final formattedTaskData = {
       'subject': taskData['subject'],
       'status': taskData['status'],
       'due_date': taskData['due_date'],
-      'assigned_to': taskData['assigned_to_name'] ?? taskData['assigned_to'],
-      'related_object_id': taskData['related_object_id'],
-      'related_to': taskData['related_to'],
-      'user_id': int.parse(taskData['assigned_to_id'].toString()),
+      'assigned_to_id': taskData['assigned_to_id'],
+      'related_to_object_id': taskData['related_object_id']  // Make sure this mapping is correct
     };
     
     print('🌐 Creating new task at $url');
@@ -1877,7 +2361,7 @@ Future<Map<String, dynamic>> updateFileName(Map<String, dynamic> data) async {
     // await fetchTasks(currentToken);
   }
 
- Future<Map<String, dynamic>> updateTask(String taskId, Map<String, dynamic> taskData, String token) async {
+Future<Map<String, dynamic>> updateTask(String taskId, Map<String, dynamic> taskData, String token) async {
   _isLoading = true;
   _error = null;
   _safeNotifyListeners();
@@ -1888,16 +2372,18 @@ Future<Map<String, dynamic>> updateFileName(Map<String, dynamic> data) async {
       _safeNotifyListeners();
       return {'success': false, 'error': _error};
     }
-    final url = 'https://qa.api.bussus.com/v2/api/task';
     
-    // Create a copy of taskData and ensure the ID is included
-    final Map<String, dynamic> dataWithId = {
-      'id': taskId,
-      ...taskData
-    };
+    // Use the correct API URL from your example
+    final url = 'https://dev.api.bussus.com/v2/api/task';
     
     print('🌐 Sending PATCH request to $url with task ID: $taskId');
-    print('📝 Task data: $dataWithId');
+    print('📝 Task data: $taskData');
+    
+    // Format the request body according to your required payload structure
+    // This exactly matches the format you provided in your example
+    final requestBody = {
+      'data': taskData
+    };
     
     final response = await http.patch(
       Uri.parse(url),
@@ -1905,10 +2391,7 @@ Future<Map<String, dynamic>> updateFileName(Map<String, dynamic> data) async {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
       },
-      body: json.encode({
-        'id': taskId,
-        'data': dataWithId
-      }),
+      body: json.encode(requestBody),
     );
     
     print('📤 Update response status: ${response.statusCode}');
@@ -1976,6 +2459,76 @@ Future<Map<String, dynamic>> updateFileName(Map<String, dynamic> data) async {
     return {'success': false, 'error': _error.toString()};
   }
 }
+
+// Add this method to your DataProvider class
+Future<Map<String, dynamic>> updateMinimalTask(String taskId, Map<String, dynamic> taskData, String token) async {
+  _isLoading = true;
+  _error = null;
+  _safeNotifyListeners();
+  try {
+    if (token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': _error};
+    }
+    
+    // API URL
+    final url = 'https://dev.api.bussus.com/v2/api/task';
+    
+    print('🌐 Sending PATCH request to $url with task ID: $taskId');
+    print('📝 Minimal task data: $taskData');
+    
+    // Format the request body exactly as in the original API scheme
+    final requestBody = {
+      'data': taskData
+    };
+    
+    // Send a raw request to see the actual API response structure
+    final http.Response response = await http.patch(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode(requestBody),
+    );
+    
+    // Log the complete raw response for debugging
+    print('📤 Raw update response status: ${response.statusCode}');
+    print('📤 Raw update response body: ${response.body}');
+    
+    final Map<String, dynamic> responseData = json.decode(response.body);
+    
+    // Check if the response has errors specific to the task update
+    if (responseData['errors'] != null && responseData['errors'].isNotEmpty) {
+      // Find the error for our task ID if it exists
+      final taskError = responseData['errors'].firstWhere(
+        (error) => error['id'] == taskId,
+        orElse: () => null
+      );
+      
+      if (taskError != null && taskError['error'] != null) {
+        _error = 'Update failed: ${taskError['error']}';
+        _isLoading = false;
+        _safeNotifyListeners();
+        return {'success': false, 'error': _error};
+      }
+    }
+    
+    // If we made it here, consider it a success even if no records were updated
+    _isLoading = false;
+    _safeNotifyListeners();
+    return {'success': true};
+    
+  } catch (e) {
+    _error = 'Error occurred: $e';
+    print('❌ Error updating task: $e');
+    _isLoading = false;
+    _safeNotifyListeners();
+    return {'success': false, 'error': _error.toString()};
+  }
+}
 Future<Map<String, dynamic>> fetchRelatedActivities(String parentId, String token) async {
     try {
       // Log the request
@@ -2030,125 +2583,176 @@ Future<Map<String, dynamic>> fetchRelatedActivities(String parentId, String toke
       };
     }
   }
-  Future<Map<String, dynamic>> getUsers(String token) async {
-    _isLoading = true;
-    _error = null;
-    _safeNotifyListeners();
+ Future<Map<String, dynamic>> getUsers(String token) async {
+  _isLoading = true;
+  _error = null;
+  _safeNotifyListeners();
+  
+  try {
+    if (token.isEmpty) {
+      _error = 'Authentication required. Please log in.';
+      _isLoading = false;
+      _safeNotifyListeners();
+      return {'success': false, 'error': _error};
+    }
     
-    try {
-      if (token.isEmpty) {
-        _error = 'Authentication required. Please log in.';
-        _isLoading = false;
-        _safeNotifyListeners();
-        return {'success': false, 'error': _error};
-      }
+    // Updated URL to match the working endpoint
+    final url = 'https://dev.api.bussus.com/v2/api/lookup/users?search=';
+    
+    print('🌐 Fetching users from $url');
+    
+    final response = await http.get(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+    
+    print('📥 Users response status: ${response.statusCode}');
+    
+    if (response.statusCode == 200) {
+      final dynamic responseData = json.decode(response.body);
+      print('📋 Raw response data type: ${responseData.runtimeType}');
       
-      final url = 'https://qa.api.bussus.com/v2/api/setup/users';
-      
-      print('🌐 Fetching users from $url');
-      
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-      
-      print('📥 Users response status: ${response.statusCode}');
-      
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
+      // Handle direct array response
+      if (responseData is List) {
+        print('✅ Received direct array with ${responseData.length} users');
         
-        if (responseData != null && responseData['data'] != null) {
+        // Validate each user object
+        List<Map<String, dynamic>> validUsers = [];
+        for (int i = 0; i < responseData.length; i++) {
+          final user = responseData[i];
+          if (user is Map<String, dynamic>) {
+            // Ensure required fields exist
+            if (user.containsKey('id') && user.containsKey('name')) {
+              validUsers.add({
+                'id': user['id']?.toString() ?? '',
+                'name': user['name']?.toString() ?? '',
+                'email': user['email']?.toString() ?? '',
+                'first_name': user['first_name']?.toString() ?? '',
+                'last_name': user['last_name']?.toString() ?? '',
+              });
+            } else {
+              print('⚠️ Skipping invalid user at index $i: missing id or name');
+            }
+          } else {
+            print('⚠️ Skipping invalid user at index $i: not a map');
+          }
+        }
+        
+        _isLoading = false;
+        _error = null;
+        _safeNotifyListeners();
+        return {'success': true, 'data': validUsers};
+      }
+      // Handle wrapped response (fallback)
+      else if (responseData is Map && responseData.containsKey('data')) {
+        print('✅ Received wrapped response');
+        final userData = responseData['data'];
+        if (userData is List) {
           _isLoading = false;
           _error = null;
           _safeNotifyListeners();
-          return {'success': true, 'data': responseData['data']};
+          return {'success': true, 'data': userData};
         } else {
-          _error = 'Invalid response format';
+          _error = 'Invalid data format in response';
           _isLoading = false;
           _safeNotifyListeners();
           return {'success': false, 'error': _error};
         }
-      } else {
-        String errorMessage;
-        try {
-          final responseData = json.decode(response.body);
-          errorMessage = responseData['message'] ?? 'Failed to fetch users';
-        } catch (e) {
-          errorMessage = 'Failed to fetch users. Status code: ${response.statusCode}';
-        }
-        _error = errorMessage;
+      }
+      // Handle unexpected response format
+      else {
+        _error = 'Unexpected response format: ${responseData.runtimeType}';
+        print('❌ $_error');
+        print('📋 Response data: $responseData');
         _isLoading = false;
         _safeNotifyListeners();
-        return {'success': false, 'error': errorMessage};
+        return {'success': false, 'error': _error};
       }
-    } catch (e) {
-      _error = 'Error occurred: $e';
-      print('❌ Error fetching users: $e');
+    } else {
+      String errorMessage;
+      try {
+        final responseData = json.decode(response.body);
+        errorMessage = responseData['message'] ?? 'Failed to fetch users';
+      } catch (e) {
+        errorMessage = 'Failed to fetch users. Status code: ${response.statusCode}';
+      }
+      _error = errorMessage;
       _isLoading = false;
       _safeNotifyListeners();
-      return {'success': false, 'error': _error.toString()};
+      return {'success': false, 'error': errorMessage};
     }
-  }
-
-
-  Future<void> searchData(String type, String query, String token) async {
-    _isLoading = true;
-    _error = null;
+  } catch (e, stackTrace) {
+    _error = 'Error occurred: $e';
+    print('❌ Error fetching users: $e');
+    print('📍 Stack trace: $stackTrace');
+    _isLoading = false;
     _safeNotifyListeners();
+    return {'success': false, 'error': _error.toString()};
+  }
+}
 
-    try {
-      // Construct the URL with search parameter
-      final url = Uri.parse('https://qa.api.bussus.com/v2/api/listview/$type?listview=all&search=$query&limit=10&offset=0');
-      print('🔍 Searching $type with query: "$query"');
-      print('🌐 Search URL: ${url.toString()}');
 
-      final response = await http.get(
-        url,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      print('📤 Search response status code: ${response.statusCode}');
-      print('📤 Search response body length: ${response.body.length}');
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = json.decode(response.body);
-        final ApiResponse apiResponse = ApiResponse.fromJson(responseData);
-
-        // Store the results in _items and _filteredItems
-        _items = apiResponse.data;
-        _filteredItems = _items;
-        _currentResponse = apiResponse;
-        _currentListViewId = apiResponse.listview.id;
-        _error = null;
-
-        print('🔍 Found ${_items.length} search results for "$query"');
-      } else if (response.statusCode == 401) {
-        _error = 'Authentication expired. Please log in again.';
-        _items = [];
-        _filteredItems = [];
-      } else if (response.statusCode == 404) {
-        _error = 'No results found.';
-        _items = [];
-        _filteredItems = [];
-      } else {
-        _error = 'Search failed. Status code: ${response.statusCode}';
-        _items = [];
-        _filteredItems = [];
-      }
-    } catch (e) {
-      _error = 'Error occurred during search: $e';
+ Future<void> searchData(String type, String query, String token) async {
+  _isLoading = true;
+  _error = null;
+  _safeNotifyListeners();
+  
+  try {
+    // Ensure type is in plural form
+    final correctType = _getCorrectType(type);
+    
+    // Construct the URL with search parameter using ApiConfig
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/listview/$correctType?listview=all&search=$query&limit=10&offset=0');
+    print('🔍 Searching $correctType with query: "$query"');
+    print('🌐 Search URL: ${url.toString()}');
+    
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+    
+    print('📤 Search response status code: ${response.statusCode}');
+    print('📤 Search response body length: ${response.body.length}');
+    
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> responseData = json.decode(response.body);
+      final ApiResponse apiResponse = ApiResponse.fromJson(responseData);
+      
+      // Store the results in _items and _filteredItems
+      _items = apiResponse.data;
+      _filteredItems = _items;
+      _currentResponse = apiResponse;
+      _currentListViewId = apiResponse.listview.id;
+      _error = null;
+      
+      print('🔍 Found ${_items.length} search results for "$query"');
+    } else if (response.statusCode == 401) {
+      _error = 'Authentication expired. Please log in again.';
       _items = [];
       _filteredItems = [];
-      print('❌ Error during search: $e');
-    } finally {
-      _isLoading = false;
-      _safeNotifyListeners();
+    } else if (response.statusCode == 404) {
+      _error = 'No results found.';
+      _items = [];
+      _filteredItems = [];
+    } else {
+      _error = 'Search failed. Status code: ${response.statusCode}';
+      _items = [];
+      _filteredItems = [];
     }
+  } catch (e) {
+    _error = 'Error occurred during search: $e';
+    _items = [];
+    _filteredItems = [];
+    print('❌ Error during search: $e');
+  } finally {
+    _isLoading = false;
+    _safeNotifyListeners();
   }
+}
 }

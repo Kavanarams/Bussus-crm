@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/data_provider.dart';
+import '../providers/tabs_provider.dart';
 import '../models/dynamic_model.dart';
 import 'details_screen.dart';
 import '../theme/app_colors.dart';
@@ -9,6 +10,7 @@ import '../theme/app_dimensions.dart';
 import '../theme/app_text_styles.dart';
 import '../theme/app_button_styles.dart';
 import '../theme/app_snackbar.dart';
+import 'home_screen.dart';
 
 class EditItemScreen extends StatefulWidget {
   final String type;
@@ -51,67 +53,75 @@ class _EditItemScreenState extends State<EditItemScreen> {
   }
 
   Future<void> _loadItemDetails() async {
-    if (!_isInitialized) {
-      setState(() {
-        _isLoading = true;
-        _error = null;
-      });
+  if (!_isInitialized) {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
-      try {
-        final dataProvider = Provider.of<DataProvider>(context, listen: false);
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    try {
+      final dataProvider = Provider.of<DataProvider>(context, listen: false);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-        // Find the item in the existing list
-        _itemToEdit = dataProvider.items.firstWhere(
-          (item) => item.id == widget.itemId,
-          orElse: () => throw Exception('Item not found'),
+      // Find the item in the existing list (for basic info)
+      _itemToEdit = dataProvider.items.firstWhere(
+        (item) => item.id == widget.itemId,
+        orElse: () => throw Exception('Item not found'),
+      );
+
+      // Fetch the item preview via the DataProvider
+      final previewData = await dataProvider.fetchItemPreview(
+        widget.type,
+        widget.itemId,
+        authProvider.token,
+      );
+      
+      // FIXED: Update _itemToEdit with the detailed data from API response
+      if (previewData.containsKey('data')) {
+        // Create a new DynamicModel with the detailed data from the API
+        _itemToEdit = DynamicModel.fromJson(
+          previewData['data'],
+          _itemToEdit!.visibleColumns, // Keep the original visible columns
         );
-
-        // Fetch the item preview via the DataProvider
-        final previewData = await dataProvider.fetchItemPreview(
-          widget.type,
-          widget.itemId,
-          authProvider.token,
-        );
-        
-        // Store layout information
-        if (previewData.containsKey('layout')) {
-          _layoutData = previewData['layout'];
-          
-          // Extract sections from layout
-          if (_layoutData != null && _layoutData!.containsKey('sections')) {
-            sections = List<Map<String, dynamic>>.from(_layoutData!['sections']);
-          }
-        }
-        
-        // Process field data
-        if (previewData.containsKey('all_columns')) {
-          _processFieldData(previewData['all_columns']);
-        }
-        
-        // Make sure all picklist fields have values
-        _ensurePicklistValuesExist();
-
-        // Initialize controllers with the current values
-        for (var column in dataProvider.allColumns) {
-          String value = _itemToEdit!.getStringAttribute(column.name, defaultValue: '');
-          _controllers[column.name] = TextEditingController(text: value);
-        }
-
-        _isInitialized = true;
-      } catch (e) {
-        setState(() {
-          _error = 'Failed to load item details: $e';
-        });
-        print('❌ Error loading item details: $_error');
-      } finally {
-        setState(() {
-          _isLoading = false;
-        });
       }
+      
+      // Store layout information
+      if (previewData.containsKey('layout')) {
+        _layoutData = previewData['layout'];
+        
+        // Extract sections from layout
+        if (_layoutData != null && _layoutData!.containsKey('sections')) {
+          sections = List<Map<String, dynamic>>.from(_layoutData!['sections']);
+        }
+      }
+      
+      // Process field data
+      if (previewData.containsKey('all_columns')) {
+        _processFieldData(previewData['all_columns']);
+      }
+      
+      // Make sure all picklist fields have values
+      _ensurePicklistValuesExist();
+
+      // Initialize controllers with the current values (now with proper relationship data)
+      for (var column in dataProvider.allColumns) {
+        String value = _itemToEdit!.getDisplayValue(column.name, defaultValue: '');
+        _controllers[column.name] = TextEditingController(text: value);
+      }
+
+      _isInitialized = true;
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to load item details: $e';
+      });
+      print('❌ Error loading item details: $_error');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
-
+}
   void _processFieldData(List<dynamic> columns) {
     for (var column in columns) {
       // Store the data type for each field
@@ -191,81 +201,184 @@ class _EditItemScreenState extends State<EditItemScreen> {
     });
   }
 
-  Future<void> _saveChanges() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
+  // In EditItemScreen, replace the _saveChanges method:
+Future<void> _saveChanges() async {
+  setState(() {
+    _isLoading = true;
+    _error = null;
+  });
+
+  try {
+    final dataProvider = Provider.of<DataProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    // Create a plain object without the "data" wrapper
+    Map<String, dynamic> formData = {};
+
+    // Add all field values directly to the formData object
+    _controllers.forEach((key, controller) {
+      // Don't include empty strings for optional fields
+      if (controller.text.isNotEmpty) {
+        formData[key] = controller.text;
+      } else {
+        // Include null for empty fields to clear them
+        formData[key] = null;
+      }
     });
 
-    try {
-      final dataProvider = Provider.of<DataProvider>(context, listen: false);
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    // Make sure to include the ID
+    formData["id"] = widget.itemId;
 
-      // Create a plain object without the "data" wrapper
-      Map<String, dynamic> formData = {};
+    // Remove read-only fields
+    formData.remove("created_by");
+    formData.remove("created_date");
+    formData.remove("last_modified_by");
+    formData.remove("last_modified_date");
 
-      // Add all field values directly to the formData object
-      _controllers.forEach((key, controller) {
-        // Don't include empty strings for optional fields
-        if (controller.text.isNotEmpty) {
-          formData[key] = controller.text;
-        } else {
-          // Include null for empty fields to clear them
-          formData[key] = null;
-        }
-      });
+    // Send update request
+    final result = await dataProvider.updateItem(
+      widget.type,
+      widget.itemId,
+      formData,
+      authProvider.token
+    );
 
-      // Make sure to include the ID
-      formData["id"] = widget.itemId;
-
-      // Remove read-only fields
-      formData.remove("created_by");
-      formData.remove("created_date");
-      formData.remove("last_modified_by");
-      formData.remove("last_modified_date");
-
-      // Send update request
-      final result = await dataProvider.updateItem(
-        widget.type,
-        widget.itemId,
-        formData,
-        authProvider.token
-      );
-
-      if (result['success']) {
-        // Show success snackbar
-        AppSnackBar.showSuccess(context, 'Changes saved successfully');
-        
-        // Navigate to the details screen
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DetailsScreen(
-              type: widget.type,
-              itemId: widget.itemId,
-            ),
+    if (result['success']) {
+      // Show success snackbar
+      AppSnackBar.showSuccess(context, 'Changes saved successfully');
+      
+      // FIXED: Navigate to DetailsScreen instead of popping back to ListScreen
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => DetailsScreen(
+            type: widget.type,
+            itemId: widget.itemId,
           ),
-        );
-      } else {
-        setState(() {
-          _error = result['message'];
-        });
-        
-        // Show error snackbar
-        AppSnackBar.showError(context, _error ?? 'Failed to save changes');
-      }
-    } catch (e) {
+        ),
+      );
+      
+    } else {
       setState(() {
-        _error = 'Error updating item: $e';
+        _error = result['message'];
       });
-      print('❌ Error updating item: $_error');
       
       // Show error snackbar
-      AppSnackBar.showError(context, 'Error saving changes: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      AppSnackBar.showError(context, _error ?? 'Failed to save changes');
+    }
+  } catch (e) {
+    setState(() {
+      _error = 'Error updating item: $e';
+    });
+    print('❌ Error updating item: $_error');
+    
+    // Show error snackbar
+    AppSnackBar.showError(context, 'Error saving changes: $e');
+  } finally {
+    setState(() {
+      _isLoading = false;
+    });
+  }
+}
+
+  // Helper methods from MainLayout for consistent naming and icons
+  String _getDisplayName(String? type) {
+    if (type == null) return 'Data';
+    
+    final tabsProvider = Provider.of<TabsProvider>(context, listen: false);
+    final displayName = tabsProvider.getDisplayNameForTab(type);
+    
+    if (displayName != type) {
+      return displayName;
+    }
+    
+    // Fallback to manual mapping if not found in tabs
+    switch (type.toLowerCase()) {
+      case 'leads':
+        return 'Leads';
+      case 'accounts':
+        return 'Accounts';
+      case 'contact':
+        return 'Contacts';
+      case 'opportunity':
+        return 'Opportunities';
+      case 'campaign':
+        return 'Campaigns';
+      case 'product':
+        return 'Products';
+      case 'quote':
+        return 'Quotes';
+      case 'campaign_member':
+        return 'Campaign Members';
+      case 'invoice':
+        return 'Invoices';
+      case 'visit':
+        return 'Visits';
+      case 'case':
+        return 'Cases';
+      case 'target':
+        return 'Targets';
+      default:
+        return type.substring(0, 1).toUpperCase() + type.substring(1) + 's';
+    }
+  }
+
+  IconData _getIconForType(String? type) {
+    if (type == null) return Icons.list;
+    
+    final tabsProvider = Provider.of<TabsProvider>(context, listen: false);
+    final tab = tabsProvider.getTabByName(type);
+    
+    if (tab != null && !tab.isIconUrl) {
+      // Map the API icon name to Flutter IconData
+      switch (tab.icon.toLowerCase()) {
+        case 'editlocation':
+          return Icons.edit_location;
+        case 'addlocation':
+          return Icons.add_location;
+        case 'cases':
+          return Icons.work;
+        case 'peoplealt':
+          return Icons.people;
+        case 'addtophotos':
+          return Icons.add_to_photos;
+        case 'requestquote':
+          return Icons.request_quote;
+        case 'contactemergency':
+          return Icons.contact_emergency;
+        case 'leaderboard':
+          return Icons.leaderboard;
+      }
+    }
+    
+    // Fallback to manual mapping if not found in tabs
+    switch (type.toLowerCase()) {
+      case 'leads':
+        return Icons.person;
+      case 'accounts':
+        return Icons.business;
+      case 'contact':
+        return Icons.contacts;
+      case 'opportunity':
+        return Icons.star;
+      case 'campaign':
+        return Icons.campaign;
+      case 'product':
+        return Icons.inventory;
+      case 'quote':
+        return Icons.request_quote;
+      case 'campaign_member':
+        return Icons.group;
+      case 'invoice':
+        return Icons.receipt;
+      case 'visit':
+        return Icons.location_on;
+      case 'case':
+        return Icons.work;
+      case 'target':
+        return Icons.track_changes;
+      default:
+        return Icons.list;
     }
   }
 
@@ -276,37 +389,70 @@ class _EditItemScreenState extends State<EditItemScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'Edit ${_capitalizeFirstLetter(widget.type)}',
-        ),
-        actions: [
-          TextButton(
-            onPressed: _isLoading ? null : _saveChanges,
-            child: Text(
-              'SAVE',
-              style: TextStyle(color: AppColors.textWhite, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
+        title: Text('Edit'), // Changed: Just "Edit" instead of "Edit ObjectName"
+        // Removed: Save button from app bar
       ),
       backgroundColor: AppColors.background,
       body: _isLoading ?
         Center(child: CircularProgressIndicator()) :
         _buildForm(dataProvider, theme),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: AppColors.cardBackground,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.favorite), label: "Label"),
-          BottomNavigationBarItem(icon: Icon(Icons.shopping_cart), label: "Leads"),
-          BottomNavigationBarItem(icon: Icon(Icons.receipt), label: "Invoices"),
-          BottomNavigationBarItem(icon: Icon(Icons.menu), label: "Menu"),
-        ],
-        currentIndex: 1,
-        selectedItemColor: AppColors.primary,
-      ),
+      // Replace the existing bottomNavigationBar in your EditItemScreen's build method with this:
+
+bottomNavigationBar: Consumer<TabsProvider>(
+  builder: (context, tabsProvider, child) {
+    return BottomNavigationBar(
+      type: BottomNavigationBarType.fixed,
+      backgroundColor: AppColors.cardBackground,
+      items: [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.home), 
+          label: "Home"
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(_getIconForType(widget.type)), 
+          label: _getDisplayName(widget.type)
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.menu), 
+          label: "Menu"
+        ),
+      ],
+      currentIndex: 1, // Set to middle tab since we're editing an object
+      selectedItemColor: AppColors.primary,
+      onTap: (index) {
+        _handleBottomNavTap(index);
+      },
+    );
+  },
+),
     );
   }
+  // Add this method to your _EditItemScreenState class:
+void _handleBottomNavTap(int index) {
+  switch (index) {
+    case 0: // Home
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MainLayout(initialIndex: 0), // Home tab
+        ),
+        (route) => false, // Remove all previous routes
+      );
+      break;
+    case 1: // Current object type (stay on edit screen)
+      // Do nothing - we're already on the edit screen for this type
+      break;
+    case 2: // Menu
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MainLayout(initialIndex: 2), // Menu tab
+        ),
+        (route) => false, // Remove all previous routes
+      );
+      break;
+  }
+}
 
   Widget _buildForm(DataProvider dataProvider, ThemeData theme) {
     if (_error != null) {
@@ -375,7 +521,9 @@ class _EditItemScreenState extends State<EditItemScreen> {
                                 children: [
                                   Text(
                                     title,
-                                    style: AppTextStyles.subheading,
+                                    style: AppTextStyles.subheading.copyWith(
+    fontSize: 16, // Adjust this number to your preference
+  ),
                                   ),
                                   SizedBox(height: AppDimensions.spacingXs),
                                   Divider(color: AppColors.divider),
@@ -443,176 +591,51 @@ class _EditItemScreenState extends State<EditItemScreen> {
     );
   }
 
-  Widget _buildFormField(ColumnInfo column, ThemeData theme) {
-    // Skip read-only fields
-    if (_isReadOnlyField(column.name)) {
-      return SizedBox.shrink();
-    }
-    
-    // Make sure controller exists
-    if (!_controllers.containsKey(column.name)) {
-      _controllers[column.name] = TextEditingController();
-    }
+ Widget _buildFormField(ColumnInfo column, ThemeData theme) {
+  // Make sure controller exists
+  if (!_controllers.containsKey(column.name)) {
+    _controllers[column.name] = TextEditingController();
+  }
 
-    bool isRequired = column.required;
-    String fieldLabel = column.label;
-    String fieldName = column.name;
+  bool isRequired = column.required;
+  String fieldLabel = column.label;
+  bool isReadOnly = _isReadOnlyField(column.name);
 
-    // Current value from controller
-    String currentValue = _controllers[column.name]!.text;
-    
-    // Check if this field is a picklist based on our stored types
-    bool isPicklist = _fieldDataTypes[column.name] == 'picklist';
-    List<String>? picklistValues = _picklistValues[column.name];
-    
-    // Handle picklist fields (if we have values for them)
-    if (isPicklist && picklistValues != null && picklistValues.isNotEmpty) {
-      return Padding(
-        padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(height: AppDimensions.spacingXs),
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: AppColors.divider),
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusXs),
-                    color: AppColors.cardBackground,
-                  ),
-                  child: DropdownButtonFormField<String>(
-                    value: picklistValues.contains(currentValue) ? currentValue : null,
-                    items: [
-                      // Add an empty option for nullable fields
-                      if (!isRequired)
-                        DropdownMenuItem<String>(
-                          value: '',
-                          child: Text('-- None --', style: AppTextStyles.bodyMedium),
-                        ),
-                      ...picklistValues.map((value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value, style: AppTextStyles.bodyMedium),
-                        );
-                      }),
-                    ],
-                    onChanged: (newValue) {
-                      setState(() {
-                        _controllers[column.name]!.text = newValue ?? '';
-                      });
-                    },
-                    decoration: InputDecoration(
-                      contentPadding: EdgeInsets.fromLTRB(
-                        AppDimensions.spacingM, 
-                        AppDimensions.spacingL, 
-                        AppDimensions.spacingM, 
-                        AppDimensions.spacingS
-                      ),
-                      border: InputBorder.none,
-                      isDense: true,
-                    ),
-                    icon: Icon(Icons.arrow_drop_down, color: AppColors.textPrimary),
-                    isExpanded: true,
-                    dropdownColor: AppColors.cardBackground,
-                  ),
-                ),
-                // Field label positioned on top of the border
-                Positioned(
-                  top: -10,
-                  left: 10,
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingXs),
-                    color: AppColors.cardBackground,
-                    child: Text(
-                      "$fieldLabel${isRequired ? ' *' : ''}", 
-                      style: AppTextStyles.labelText,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    }
+  // Current value from controller
+  String currentValue = _controllers[column.name]!.text;
+  
+  // Check if this field is a picklist based on our stored types
+  bool isPicklist = _fieldDataTypes[column.name] == 'picklist';
+  List<String>? picklistValues = _picklistValues[column.name];
 
-    // For date fields, use a date picker
-    if (_isDateField(column.name)) {
-      return Padding(
-        padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            TextFormField(
-  controller: _controllers[column.name],
-  decoration: InputDecoration(
-    suffixIcon: Icon(Icons.calendar_today, color: AppColors.primary),
-    contentPadding: EdgeInsets.fromLTRB(
-      AppDimensions.spacingM, 
-      AppDimensions.spacingL, 
-      AppDimensions.spacingM, 
-      AppDimensions.spacingS
-    ),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(AppDimensions.radiusXs),
-      borderSide: BorderSide(color: AppColors.divider),
-    ),
-    filled: true,
-    fillColor: AppColors.cardBackground,
-  ),
-  readOnly: true,
-  onTap: () => _showDatePicker(column.name),
-),
-            // Field label positioned on top of the border
-            Positioned(
-              top: -10,
-              left: 10,
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingXs),
-                color: AppColors.cardBackground,
-                child: Text(
-                  "$fieldLabel${isRequired ? ' *' : ''}", 
-                  style: AppTextStyles.labelText,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // For other fields, use TextFormField with inline label
+  // Handle read-only fields - show as disabled
+  if (isReadOnly) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           TextFormField(
-  controller: _controllers[column.name],
-  keyboardType: _getKeyboardType(column),
-  decoration: InputDecoration(
-    contentPadding: EdgeInsets.fromLTRB(
-      AppDimensions.spacingM, 
-      AppDimensions.spacingL, 
-      AppDimensions.spacingM, 
-      AppDimensions.spacingS
-    ),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(AppDimensions.radiusXs),
-      borderSide: BorderSide(color: AppColors.divider),
-    ),
-    filled: true,
-    fillColor: AppColors.cardBackground,
-  ),
-  validator: isRequired ? (value) {
-    if (value == null || value.isEmpty) {
-      return 'Please enter ${fieldLabel.toLowerCase()}';
-    }
-    return null;
-  } : null,
-),
+            controller: _controllers[column.name],
+            enabled: false, // Make it disabled/read-only
+            decoration: InputDecoration(
+              contentPadding: EdgeInsets.fromLTRB(
+                AppDimensions.spacingM, 
+                AppDimensions.spacingL, 
+                AppDimensions.spacingM, 
+                AppDimensions.spacingS
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppDimensions.radiusXs),
+                borderSide: BorderSide(color: AppColors.divider),
+              ),
+              filled: true,
+              fillColor: const Color.fromARGB(255, 255, 252, 252).withOpacity(0.1), // Light gray background for disabled fields
+            ),
+            style: TextStyle(
+              color: const Color.fromARGB(255, 179, 178, 178), // Muted text color for read-only fields
+            ),
+          ),
           // Field label positioned on top of the border
           Positioned(
             top: -10,
@@ -620,22 +643,10 @@ class _EditItemScreenState extends State<EditItemScreen> {
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingXs),
               color: AppColors.cardBackground,
-              child: RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: fieldLabel,
-                      style: AppTextStyles.labelText,
-                    ),
-                    if (isRequired) TextSpan(
-                      text: ' *',
-                      style: TextStyle(
-                        fontSize: AppDimensions.textS,
-                        color: AppColors.error,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+              child: Text(
+                fieldLabel,
+                style: AppTextStyles.labelText.copyWith(
+                  color: const Color.fromARGB(255, 179, 178, 178), // Muted color for read-only labels
                 ),
               ),
             ),
@@ -645,16 +656,197 @@ class _EditItemScreenState extends State<EditItemScreen> {
     );
   }
   
-  // Helper method to determine if field is read-only
-  bool _isReadOnlyField(String fieldName) {
-    final readOnlyFields = [
-      'created_by', 
-      'created_date', 
-      'last_modified_by', 
-      'last_modified_date'
-    ];
-    return readOnlyFields.contains(fieldName);
+  // Handle picklist fields (if we have values for them)
+  if (isPicklist && picklistValues != null && picklistValues.isNotEmpty) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(height: AppDimensions.spacingXs),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              DropdownButtonFormField<String>(
+                value: picklistValues.contains(currentValue) ? currentValue : null,
+                items: [
+                  // Add an empty option for nullable fields
+                  if (!isRequired)
+                    DropdownMenuItem<String>(
+                      value: '',
+                      child: Text('-- None --', style: AppTextStyles.bodyMedium),
+                    ),
+                  ...picklistValues.map((value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value, style: AppTextStyles.bodyMedium),
+                    );
+                  }),
+                ],
+                onChanged: (newValue) {
+                  setState(() {
+                    _controllers[column.name]!.text = newValue ?? '';
+                  });
+                },
+                decoration: InputDecoration(
+                  contentPadding: EdgeInsets.fromLTRB(
+                    AppDimensions.spacingM, 
+                    AppDimensions.spacingL, 
+                    AppDimensions.spacingM, 
+                    AppDimensions.spacingS
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusXs),
+                    borderSide: BorderSide(color: AppColors.divider),
+                  ),
+                  filled: true,
+                  fillColor: AppColors.cardBackground,
+                ),
+                icon: Icon(Icons.arrow_drop_down, color: AppColors.textPrimary),
+                isExpanded: true,
+                dropdownColor: AppColors.cardBackground,
+              ),
+              // Field label positioned on top of the border
+              Positioned(
+                top: -10,
+                left: 10,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingXs),
+                  color: AppColors.cardBackground,
+                  child: Text(
+                    "$fieldLabel${isRequired ? ' *' : ''}", 
+                    style: AppTextStyles.labelText,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
+
+  // For date fields, use a date picker
+  if (_isDateField(column.name)) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          TextFormField(
+            controller: _controllers[column.name],
+            decoration: InputDecoration(
+              suffixIcon: Icon(Icons.calendar_today, color: AppColors.primary),
+              contentPadding: EdgeInsets.fromLTRB(
+                AppDimensions.spacingM, 
+                AppDimensions.spacingL, 
+                AppDimensions.spacingM, 
+                AppDimensions.spacingS
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppDimensions.radiusXs),
+                borderSide: BorderSide(color: AppColors.divider),
+              ),
+              filled: true,
+              fillColor: AppColors.cardBackground,
+            ),
+            readOnly: true,
+            onTap: () => _showDatePicker(column.name),
+          ),
+          // Field label positioned on top of the border
+          Positioned(
+            top: -10,
+            left: 10,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingXs),
+              color: AppColors.cardBackground,
+              child: Text(
+                "$fieldLabel${isRequired ? ' *' : ''}", 
+                style: AppTextStyles.labelText,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // For other fields, use TextFormField with inline label
+  return Padding(
+    padding: EdgeInsets.symmetric(vertical: AppDimensions.spacingS),
+    child: Stack(
+      clipBehavior: Clip.none,
+      children: [
+        TextFormField(
+          controller: _controllers[column.name],
+          keyboardType: _getKeyboardType(column),
+          decoration: InputDecoration(
+            contentPadding: EdgeInsets.fromLTRB(
+              AppDimensions.spacingM, 
+              AppDimensions.spacingL, 
+              AppDimensions.spacingM, 
+              AppDimensions.spacingS
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppDimensions.radiusXs),
+              borderSide: BorderSide(color: AppColors.divider),
+            ),
+            filled: true,
+            fillColor: AppColors.cardBackground,
+          ),
+          validator: isRequired ? (value) {
+            if (value == null || value.isEmpty) {
+              return 'Please enter ${fieldLabel.toLowerCase()}';
+            }
+            return null;
+          } : null,
+        ),
+        // Field label positioned on top of the border
+        Positioned(
+          top: -10,
+          left: 10,
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: AppDimensions.spacingXs),
+            color: AppColors.cardBackground,
+            child: RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: fieldLabel,
+                    style: AppTextStyles.labelText,
+                  ),
+                  if (isRequired) TextSpan(
+                    text: ' *',
+                    style: TextStyle(
+                      fontSize: AppDimensions.textS,
+                      color: AppColors.error,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// Updated helper method to determine if field is read-only
+bool _isReadOnlyField(String fieldName) {
+  final readOnlyFields = [
+    'created_by', 
+    'created_by_id',
+    'created_date', 
+    'last_modified_by',
+    'last_modified_by_id', 
+    'last_modified_date',
+    'id', // ID should also not be editable
+    'owner_id', // Usually not directly editable
+  ];
+  return readOnlyFields.contains(fieldName);
+}
   
   // Helper method to determine if field is a date field
   bool _isDateField(String fieldName) {

@@ -27,41 +27,45 @@ class _FilterPageState extends State<FilterPage> {
   List<filter_logic.FilterCondition> _activeFilters = [];
   bool _isLoading = false;
   bool _hasChanges = false;
-  // Track a temporary filter condition for the dialog
   filter_logic.FilterCondition? _tempFilterCondition;
-  // Text controller for the dialog
   final TextEditingController _dialogValueController = TextEditingController();
 
+  
   @override
   void initState() {
-    super.initState();
-    // Initialize filters from the current data provider filters
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeFilters();
-    });
-  }
+  super.initState();
+  // Use addPostFrameCallback to ensure DataProvider is fully loaded
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _initializeFilters();
+  });
+}
+// Update the _initializeFilters method in your FilterPage
 
-  void _initializeFilters() {
-    final dataProvider = Provider.of<DataProvider>(context, listen: false);
+void _initializeFilters() {
+  final dataProvider = Provider.of<DataProvider>(context, listen: false);
+  
+  print("🔍 Initializing filters from DataProvider");
+  print("DataProvider activeFilters: ${dataProvider.activeFilters}");
+  print("DataProvider hasActiveFilters: ${dataProvider.hasActiveFilters}");
+  
+  List<filter_logic.FilterCondition> currentFilters = [];
+  
+  // Check if there are active filters in the data provider
+  if (dataProvider.hasActiveFilters && dataProvider.activeFilters.isNotEmpty) {
+    print("✅ Found active filters, reconstructing filter conditions...");
     
-    // Debug: Print the current active filters from the provider
-    print("DataProvider activeFilters: ${dataProvider.activeFilters}");
-    
-    // Check if filters are actually active
-    final hasFilteredData = dataProvider.activeFilters.isNotEmpty;
-    
-    List<filter_logic.FilterCondition> currentFilters = [];
-    
-    if (hasFilteredData) {
-      // Process each active filter
-      dataProvider.activeFilters.forEach((field, value) {
-        // Parse "operator:value" format
-        if (value is String && value.contains(':')) {
-          List<String> parts = value.split(':');
+    dataProvider.activeFilters.forEach((field, value) {
+      // Handle both String and dynamic types
+      String filterValue = value.toString();
+      print("Processing filter: field=$field, value=$filterValue");
+      
+      if (filterValue.isNotEmpty) {
+        if (filterValue.contains(':')) {
+          // Handle "operator:value" format
+          List<String> parts = filterValue.split(':');
           if (parts.length >= 2) {
             String operatorStr = parts[0];
-            // Join back parts[1:] to handle values that might contain colons
-            String filterValue = parts.sublist(1).join(':');
+            String actualValue = parts.sublist(1).join(':');
             
             FilterOperator operator = FilterOperator.fromString(operatorStr);
             
@@ -69,58 +73,91 @@ class _FilterPageState extends State<FilterPage> {
               filter_logic.FilterCondition(
                 field: field,
                 operator: operator,
-                value: filterValue, // This is the actual value without the operator prefix
+                value: actualValue,
               )
             );
             
-            // Debug
-            print("Extracted filter: field=$field, operator=$operatorStr, value=$filterValue");
+            print("✅ Added filter: field=$field, operator=$operatorStr, value=$actualValue");
           }
+        } else {
+          // Handle cases where there's no operator prefix (default to equals)
+          currentFilters.add(
+            filter_logic.FilterCondition(
+              field: field,
+              operator: FilterOperator.equals,
+              value: filterValue,
+            )
+          );
+          
+          print("✅ Added default filter: field=$field, value=$filterValue");
         }
-      });
-    }
-    
-    setState(() {
-      _activeFilters = currentFilters;
+      }
     });
+  } else {
+    print("ℹ️ No active filters found in DataProvider");
   }
+  
+  setState(() {
+    _activeFilters = currentFilters;
+    // CRITICAL: Set _hasChanges to true if we have filters
+    // This ensures the UI shows that filters are applied
+    _hasChanges = currentFilters.isNotEmpty;
+  });
+  
+  print("🎯 Initialized with ${currentFilters.length} filters, hasChanges: $_hasChanges");
+  
+  // IMPORTANT: Also check if the data provider has filtered items
+  // This helps in cases where filters exist but UI state is inconsistent
+  if (currentFilters.isEmpty && dataProvider.filteredItems.isNotEmpty) {
+    print("⚠️ Found filtered items but no filter conditions. This might indicate a state inconsistency.");
+  }
+}
 
   Future<void> _applyFilters() async {
-    final dataProvider = Provider.of<DataProvider>(context, listen: false);
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+  final dataProvider = Provider.of<DataProvider>(context, listen: false);
+  final authProvider = Provider.of<AuthProvider>(context, listen: false);
+  
+  setState(() {
+    _isLoading = true;
+  });
+  
+  // Remove filters with empty values
+  List<filter_logic.FilterCondition> validFilters = _activeFilters
+      .where((filter) => filter.value.trim().isNotEmpty)
+      .toList();
+  
+  // Convert FilterCondition objects to the format your API expects
+  Map<String, String> newFilters = filter_logic.FilterManager.toSimpleFilters(validFilters);
+  
+  print("🔄 Applying ${validFilters.length} filters: $newFilters");
+  
+  try {
+    // Apply filters - this will update DataProvider's _activeFilters
+    await dataProvider.applyFilters(newFilters, authProvider.token, widget.type);
+    
+    // CRITICAL: Don't reload data here as applyFilters already handles it
+    // await dataProvider.loadData(widget.type, authProvider.token); // REMOVE THIS LINE
     
     setState(() {
-      _isLoading = true;
+      _isLoading = false;
+      // Keep _hasChanges as true since we have active filters
+      _hasChanges = validFilters.isNotEmpty;
     });
     
-    // Remove filters with empty values
-    List<filter_logic.FilterCondition> validFilters = _activeFilters
-        .where((filter) => filter.value.trim().isNotEmpty)
-        .toList();
+    // Show success message
+    AppSnackBar.showSuccess(context, 'Filters applied successfully');
     
-    // Convert FilterCondition objects to the format your API expects
-    Map<String, String> newFilters = filter_logic.FilterManager.toSimpleFilters(validFilters);
+    // Navigate back with result
+    Navigator.of(context).pop(true);
+  } catch (e) {
+    AppSnackBar.showError(context, 'Error applying filters: ${e.toString()}');
     
-    try {
-      // Apply filters
-      await dataProvider.applyFilters(newFilters, authProvider.token, widget.type);
-      
-      // Important: Reload the data after applying filters
-      await dataProvider.loadData(widget.type, authProvider.token);
-      
-      setState(() {
-        _isLoading = false;
-      });
-      
-      Navigator.of(context).pop(true);
-    } catch (e) {
-      AppSnackBar.showError(context, 'Error applying filters: ${e.toString()}');
-      
-      setState(() {
-        _isLoading = false;
-      });
-    }
+    setState(() {
+      _isLoading = false;
+    });
   }
+}
+
 
   Future<void> _clearAllFilters() async {
     final dataProvider = Provider.of<DataProvider>(context, listen: false);
@@ -134,7 +171,7 @@ class _FilterPageState extends State<FilterPage> {
       // Clear filters on the server
       await dataProvider.clearFilters();
       
-      // Important: Explicitly reload the data after clearing filters
+      // Reload the data after clearing filters
       await dataProvider.loadData(widget.type, authProvider.token);
       
       // Reset the UI state
@@ -144,7 +181,10 @@ class _FilterPageState extends State<FilterPage> {
         _hasChanges = false;
       });
       
-      // Only navigate back after all state updates are complete
+      // Show success message
+      AppSnackBar.showSuccess(context, 'All filters cleared');
+      
+      // Navigate back after clearing
       if (mounted) {
         Navigator.of(context).pop(true);
       }
@@ -210,167 +250,192 @@ class _FilterPageState extends State<FilterPage> {
   }
 
   // Method to show enhanced filter dialog
-  void _showAddFilterDialog() {
-    final dataProvider = Provider.of<DataProvider>(context, listen: false);
-    List<filter_logic.ColumnInfo> allColumns = dataProvider.allColumns.map((col) => 
-      filter_logic.ColumnInfo(
-        name: col.name, 
-        type: _getColumnType(col), 
-        label: col.label, 
-        display: _getColumnDisplay(col)
-      )
-    ).toList();
+  // Replace your _showAddFilterDialog method with this fixed version:
+void _showAddFilterDialog() {
+  final dataProvider = Provider.of<DataProvider>(context, listen: false);
+  List<filter_logic.ColumnInfo> allColumns = dataProvider.allColumns.map((col) => 
+    filter_logic.ColumnInfo(
+      name: col.name, 
+      type: _getColumnType(col), 
+      label: col.label, 
+      display: _getColumnDisplay(col)
+    )
+  ).toList();
 
-    // Update column labels
-    Map<String, String> columnLabels = {};
-    for (var col in dataProvider.allColumns) {
-      columnLabels[col.name] = col.label;
-    }
+  // Update column labels
+  Map<String, String> columnLabels = {};
+  for (var col in dataProvider.allColumns) {
+    columnLabels[col.name] = col.label;
+  }
+  
+  // Initialize temporary filter condition
+  if (dataProvider.visibleColumns.isNotEmpty) {
+    String initialField = dataProvider.visibleColumns.first;
+    _tempFilterCondition = filter_logic.FilterCondition(
+      field: initialField,
+      operator: getOperatorsForField(initialField, allColumns).first,
+      value: '',
+    );
     
-    // Initialize temporary filter condition
-    if (dataProvider.visibleColumns.isNotEmpty) {
-      String initialField = dataProvider.visibleColumns.first;
-      _tempFilterCondition = filter_logic.FilterCondition(
-        field: initialField,
-        operator: getOperatorsForField(initialField, allColumns).first,
-        value: '',
-      );
-      
-      // Clear the dialog controller
-      _dialogValueController.clear();
-    } else {
-      // No fields available
-      return;
-    }
-    
-    // Show the dialog
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final isDate = isDateField(_tempFilterCondition!.field, allColumns);
-            // Get the field label for display
-            final fieldLabel = columnLabels[_tempFilterCondition!.field] ?? _tempFilterCondition!.field;
-            
-            return AlertDialog(
-              backgroundColor: AppColors.cardBackground,
-              title: Text('Add Filter', style: AppTextStyles.subheading),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Field section
-                    Text('Field', style: AppTextStyles.fieldLabel),
-                    SizedBox(height: AppDimensions.spacingXs),
-                    _buildDialogFieldDropdown(allColumns, columnLabels, setDialogState),
-                    SizedBox(height: AppDimensions.spacingL),
-                    
-                    // Operator section
-                    Text('Operator', style: AppTextStyles.fieldLabel),
-                    SizedBox(height: AppDimensions.spacingXs),
-                    _buildDialogOperatorDropdown(isDate, allColumns, setDialogState),
-                    SizedBox(height: AppDimensions.spacingL),
-                    
-                    // Value section
-                    Text('Value', style: AppTextStyles.fieldLabel),
-                    SizedBox(height: AppDimensions.spacingXs),
-                    _buildDialogValueField(isDate, setDialogState),
-                    
-                    // Preview section
-                    if (_tempFilterCondition!.value.isNotEmpty) ...[
-                      SizedBox(height: AppDimensions.spacingXl),
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.all(AppDimensions.spacingM),
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryLighter.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(AppDimensions.radiusS),
-                          border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Filter Preview:',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w500,
-                                fontSize: AppDimensions.textS,
-                                color: AppColors.primaryDark,
-                              ),
-                            ),
-                            SizedBox(height: AppDimensions.spacingS),
-                            Row(
-                              children: [
-                                _buildKeyValueText('Field', fieldLabel),
-                                SizedBox(width: AppDimensions.spacingS),
-                                _buildKeyValueText('Operator', _tempFilterCondition!.operator.displayName),
-                                SizedBox(width: AppDimensions.spacingS),
-                                _buildKeyValueText('Value', _tempFilterCondition!.value),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+    // Clear the dialog controller
+    _dialogValueController.clear();
+  } else {
+    // No fields available
+    return;
+  }
+  
+  // Show the dialog
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          final isDate = isDateField(_tempFilterCondition!.field, allColumns);
+          // Get the field label for display
+          final fieldLabel = columnLabels[_tempFilterCondition!.field] ?? _tempFilterCondition!.field;
+          
+          // Replace your entire AlertDialog with this fixed version:
+
+return AlertDialog(
+  backgroundColor: AppColors.cardBackground,
+  title: Text('Add Filter', style: AppTextStyles.subheading),
+  content: SizedBox(
+    width: double.maxFinite,
+    child: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Field section
+          Text('Field', style: AppTextStyles.fieldLabel),
+          SizedBox(height: AppDimensions.spacingXs),
+          _buildDialogFieldDropdown(allColumns, columnLabels, setDialogState),
+          SizedBox(height: AppDimensions.spacingL),
+          
+          // Operator section
+          Text('Operator', style: AppTextStyles.fieldLabel),
+          SizedBox(height: AppDimensions.spacingXs),
+          _buildDialogOperatorDropdown(isDate, allColumns, setDialogState),
+          SizedBox(height: AppDimensions.spacingL),
+          
+          // Value section
+          Text('Value', style: AppTextStyles.fieldLabel),
+          SizedBox(height: AppDimensions.spacingXs),
+          _buildDialogValueField(isDate, setDialogState),
+          
+          // Preview section
+          if (_tempFilterCondition!.value.isNotEmpty) ...[
+            SizedBox(height: AppDimensions.spacingXl),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(AppDimensions.spacingM),
+              decoration: BoxDecoration(
+                color: AppColors.primaryLighter.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(AppDimensions.radiusS),
+                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
               ),
-              actions: [
-                // Cancel button
-                TextButton(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Filter Preview:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      fontSize: AppDimensions.textS,
+                      color: AppColors.primaryDark,
+                    ),
+                  ),
+                  SizedBox(height: AppDimensions.spacingS),
+                  Text('Field: $fieldLabel', style: AppTextStyles.bodySmall),
+                  SizedBox(height: AppDimensions.spacingXs),
+                  Text('Operator: ${_tempFilterCondition!.operator.displayName}', style: AppTextStyles.bodySmall),
+                  SizedBox(height: AppDimensions.spacingXs),
+                  Text('Value: ${_tempFilterCondition!.value}', style: AppTextStyles.bodySmall),
+                ],
+              ),
+            ),
+          ],
+          
+          // Add buttons directly in content
+          SizedBox(height: AppDimensions.spacingXl),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
                   onPressed: () {
                     Navigator.of(context).pop();
                   },
-                  style: AppButtonStyles.dialogCancelButton,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textPrimary,
+                    backgroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(color: AppColors.divider),
+                    ),
+                  ),
                   child: Text('Cancel'),
                 ),
-                // Save button
-                ElevatedButton(
+              ),
+              SizedBox(width: AppDimensions.spacingM),
+              Expanded(
+                child: ElevatedButton(
                   onPressed: _tempFilterCondition!.value.trim().isNotEmpty ? () {
-                    // Add the filter if value is not empty
                     setState(() {
                       _activeFilters.add(_tempFilterCondition!);
                       _hasChanges = true;
                     });
                     Navigator.of(context).pop();
                   } : null,
-                  style: AppButtonStyles.dialogConfirmButton,
+                  style: ElevatedButton.styleFrom(
+                    foregroundColor: AppColors.textWhite,
+                    backgroundColor: AppColors.primary,
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                   child: Text('Save'),
                 ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-  
-  // Helper widget for displaying key-value text in preview
-  Widget _buildKeyValueText(String key, String value) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            key,
-            style: AppTextStyles.labelText,
-          ),
-          SizedBox(height: AppDimensions.spacingXxs),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: AppDimensions.textS,
-              fontWeight: FontWeight.w500,
-              color: AppColors.primaryDark,
-            ),
-            overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
         ],
       ),
-    );
-  }
+    ),
+  ),
+);
+        },
+      );
+    },
+  );
+}
+
+// Also update the _buildKeyValueText helper method:
+Widget _buildKeyValueText(String key, String value) {
+  return Container(
+    width: double.infinity,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          key,
+          style: AppTextStyles.labelText,
+        ),
+        SizedBox(height: AppDimensions.spacingXxs),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: AppDimensions.textS,
+            fontWeight: FontWeight.w500,
+            color: AppColors.primaryDark,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    ),
+  );
+}
   
   void _removeFilter(int index) {
     setState(() {
@@ -698,14 +763,14 @@ class _FilterPageState extends State<FilterPage> {
     final dataProvider = Provider.of<DataProvider>(context);
     
     // Create column info objects with the data we have
-    List<filter_logic.ColumnInfo> allColumns = dataProvider.allColumns.map((col) => 
-      filter_logic.ColumnInfo(
-        name: col.name, 
-        type: _getColumnType(col), 
-        label: col.label, 
-        display: _getColumnDisplay(col)
-      )
-    ).toList();
+    // List<filter_logic.ColumnInfo> allColumns = dataProvider.allColumns.map((col) => 
+    //   filter_logic.ColumnInfo(
+    //     name: col.name, 
+    //     type: _getColumnType(col), 
+    //     label: col.label, 
+    //     display: _getColumnDisplay(col)
+    //   )
+    // ).toList();
     
     // Update column labels
     Map<String, String> columnLabels = {};

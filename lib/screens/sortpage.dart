@@ -106,44 +106,49 @@ class _SortPageState extends State<SortPage> {
                 Divider(height: 1, color: AppColors.divider),
                 
                 // Column selection list
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: dataProvider.visibleColumns.length,
-                    itemBuilder: (context, index) {
-                      String column = dataProvider.visibleColumns[index];
-                      String label = _columnLabels[column] ?? column;
-                      bool isActive = _tempSortColumn == column;
-                      
-                      return ListTile(
-                        title: Text(
-                          label,
-                          style: isActive 
-                              ? AppTextStyles.fieldValue
-                              : AppTextStyles.bodyMedium,
-                        ),
-                        trailing: isActive
-                            ? Icon(
-                                _tempSortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                                color: AppColors.primary,
-                                size: AppDimensions.iconM,
-                              )
-                            : null,
-                        onTap: () {
-                          setState(() {
-                            if (_tempSortColumn == column) {
-                              // Toggle sort direction if the same column is selected again
-                              _tempSortAscending = !_tempSortAscending;
-                            } else {
-                              // Set new sort column and default to ascending
-                              _tempSortColumn = column;
-                              _tempSortAscending = true;
-                            }
-                          });
-                        },
-                      );
-                    },
-                  ),
-                ),
+  Expanded(
+  child: ListView.builder(
+    itemCount: dataProvider.visibleColumns.length,
+    itemBuilder: (context, index) {
+      String column = dataProvider.visibleColumns[index];
+      String label = _columnLabels[column] ?? column;
+      bool isActive = _tempSortColumn == column;
+      
+      return ListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact, // Even more compact
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: AppDimensions.spacingL,
+          vertical: 0, // Remove all vertical padding
+        ),
+        minVerticalPadding: 0, // Remove minimum vertical padding
+        title: Text(
+          label,
+          style: isActive 
+              ? AppTextStyles.fieldValue
+              : AppTextStyles.bodyMedium,
+        ),
+        trailing: isActive
+            ? Icon(
+                _tempSortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                color: AppColors.primary,
+                size: AppDimensions.iconM,
+              )
+            : null,
+        onTap: () {
+          setState(() {
+            if (_tempSortColumn == column) {
+              _tempSortAscending = !_tempSortAscending;
+            } else {
+              _tempSortColumn = column;
+              _tempSortAscending = true;
+            }
+          });
+        },
+      );
+    },
+  ),
+),
                 
                 // Two buttons at bottom: Cancel and Apply Sort
                 Container(

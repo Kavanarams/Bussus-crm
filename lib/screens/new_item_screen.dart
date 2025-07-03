@@ -33,7 +33,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
   final Map<String, List<String>> _dropdownOptionsCache = {};
   
   // Define the fields that need lookup data
-  final List<String> _lookupFields = ['lead'];
+  final List<String> _lookupFields = ['lead', 'created_by', 'last_modified_by', 'converted_account', 'partner_account'];
   
   final Map<String, Map<String, String>> _dropdownMappings = {
     'customer_type': {
@@ -42,6 +42,13 @@ class _NewItemScreenState extends State<NewItemScreen> {
       'Contractor': 'CN',
       'Architect': 'AR',
       'Influencer': 'IN'
+    },
+    'status': {
+      'New': 'new',
+      'Follow Update': 'follow_update', 
+      'Contacted': 'contacted',
+      'Closed Won': 'closed_won',
+      'Closed Lost': 'closed_lost'
     }
   };
 
@@ -138,7 +145,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
             label: label,
             datatype: datatype,
             required: ['name', 'email', 'phone'].contains(fieldName),
-            values: '',
+            values: [],
           ));
           
           // Initialize controller
@@ -207,11 +214,18 @@ class _NewItemScreenState extends State<NewItemScreen> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final token = authProvider.token;
       
-      // Add your specific lookup fields here
       for (String field in _lookupFields) {
-        // Fetch lookup data from API
+        String endpoint;
+        
+        // Special handling for user fields
+        if (field == 'created_by' || field == 'last_modified_by') {
+          endpoint = 'https://qa.api.bussus.com/v2/api/getusers';
+        } else {
+          endpoint = 'https://qa.api.bussus.com/v2/api/lookup/$field';
+        }
+        
         final response = await http.get(
-          Uri.parse('https://qa.api.bussus.com/v2/api/lookup/$field'),
+          Uri.parse(endpoint),
           headers: {
             'Authorization': 'Bearer $token',
             'Content-Type': 'application/json',
@@ -270,14 +284,29 @@ class _NewItemScreenState extends State<NewItemScreen> {
     
     // Create some default fields
     _allFields = [
-      ColumnInfo(name: "name", label: "Name", datatype: "text", required: true, values: ""),
-      ColumnInfo(name: "email", label: "Email", datatype: "email", required: true, values: ""),
-      ColumnInfo(name: "contact_number", label: "Contact Number", datatype: "phone", required: false, values: ""),
-      ColumnInfo(name: "lead", label: "Lead", datatype: "text", required: false, values: ""),
-      ColumnInfo(name: "customer_type", label: "Customer Type", datatype: "text", required: true, 
-        values: "Engineer,Consumer,Contractor,Architect,Influencer"),
-      ColumnInfo(name: "customer_classification", label: "Customer Classification", datatype: "text", required: false, 
-        values: "A,B,C"),
+      ColumnInfo(name: "name", label: "Name", datatype: "text", required: true, values: []),
+      ColumnInfo(name: "email", label: "Email", datatype: "email", required: true, values: []),
+      ColumnInfo(name: "contact_number", label: "Contact Number", datatype: "phone", required: false, values: []),
+      ColumnInfo(name: "lead", label: "Lead", datatype: "text", required: false, values: []),
+      ColumnInfo(name: "status", label: "Status", datatype: "picklist", required: false, values: []),
+      ColumnInfo(name: "created_by", label: "Created By", datatype: "text", required: false, values: []),
+      ColumnInfo(name: "last_modified_by", label: "Last Modified By", datatype: "text", required: false, values: []),
+      ColumnInfo(name: "converted_account", label: "Converted Account", datatype: "text", required: false, values: []),
+      ColumnInfo(name: "partner_account", label: "Partner Account", datatype: "text", required: false, values: []),
+      ColumnInfo(
+        name: "customer_type", 
+        label: "Customer type", 
+        datatype: "picklist", 
+        required: false,
+        values: ["Engineer", "Consumer", "Contractor", "Architect", "Influencer"]
+      ),
+      ColumnInfo(
+        name: "customer_classification", 
+        label: "Customer Classification", 
+        datatype: "picklist", 
+        required: false,
+        values: ["A", "B", "C"]
+      ),
     ];
 
     print("Default fields created: ${_allFields.length}");
@@ -301,7 +330,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
       ),
       FormSection(
         title: "Other Details", 
-        fields: ["lead", "customer_type", "customer_classification"],
+        fields: ["lead", "status", "created_by", "last_modified_by", "converted_account", "partner_account", "customer_type", "customer_classification"],
       ),
     ];
     
@@ -507,7 +536,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
                 .join(' '),
             datatype: _guessDataType(fieldName),
             required: ['name', 'email', 'phone', 'status'].contains(fieldName),
-            values: fieldName == 'status' ? 'New,In Progress,Completed,Cancelled' : '',
+            values: fieldName == 'status' ? ['New', 'In Progress', 'Completed', 'Cancelled'] : [],
           );
           
           // Add to _allFields
@@ -550,7 +579,12 @@ class _NewItemScreenState extends State<NewItemScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Section header
-            Text(section.title, style: AppTextStyles.subheading),
+            Text(
+              section.title,
+              style: AppTextStyles.subheading.copyWith(
+                fontSize: 16, // Match the edit page
+              ),
+            ),
             SizedBox(height: 8),
             Divider(color: AppColors.divider),
             SizedBox(height: 16),
@@ -590,6 +624,12 @@ class _NewItemScreenState extends State<NewItemScreen> {
       return _buildDateField(column, isRequired);
     }
     
+    // Special handling for status field
+    if (column.name == 'status') {
+      List<String> statusOptions = ['New', 'Follow Update', 'Contacted', 'Closed Won', 'Closed Lost'];
+      return _buildDropdownField(column, statusOptions, isRequired);
+    }
+    
     // Check if this is a lookup field
     if (_lookupFields.contains(column.name) && _lookupData.containsKey(column.name)) {
       return _buildLookupDropdown(column, isRequired);
@@ -607,7 +647,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
   }
 
   // New method to build lookup dropdown
-  Widget _buildLookupDropdown(ColumnInfo column, bool isRequired) {
+Widget _buildLookupDropdown(ColumnInfo column, bool isRequired) {
   // Get the lookup data for this field
   final lookupOptions = _lookupData[column.name] ?? [];
   
@@ -624,7 +664,11 @@ class _NewItemScreenState extends State<NewItemScreen> {
   
   return DropdownButtonFormField<String>(
     value: _dropdownValues[column.name]!.isEmpty ? null : _dropdownValues[column.name],
-    decoration: _inputDecoration(column.label, isRequired),
+    decoration: _inputDecoration(column.label, isRequired).copyWith(
+      fillColor: AppColors.cardBackground,
+      filled: true,
+    ),
+    dropdownColor: AppColors.cardBackground, // Set dropdown menu background color
     isExpanded: true,
     icon: Icon(Icons.arrow_drop_down),
     onChanged: (newValue) {
@@ -638,7 +682,6 @@ class _NewItemScreenState extends State<NewItemScreen> {
       ...lookupOptions.map((option) => 
         DropdownMenuItem<String>(
           value: option['name'] ?? '',
-          // Fix: providing a default empty string if option['name'] is null
           child: Text(option['name'] ?? '', overflow: TextOverflow.ellipsis),
         )
       ),
@@ -651,6 +694,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
     } : null,
   );
 }
+
   // Simplified error display
   Widget _buildErrorDisplay() {
     return Container(
@@ -698,7 +742,7 @@ class _NewItemScreenState extends State<NewItemScreen> {
                         width: 20,
                         child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                       )
-                    : Text('Create ${widget.type.substring(0, 1).toUpperCase() + widget.type.substring(1)}'),
+                    : Text('Save'),
                 ),
               ),
             ],
@@ -775,54 +819,58 @@ class _NewItemScreenState extends State<NewItemScreen> {
     );
   }
 
-  Widget _buildDropdownField(ColumnInfo column, List<String> options, bool isRequired) {
-    // Initialize with empty string if not set yet
-    if (!_dropdownValues.containsKey(column.name)) {
-      _dropdownValues[column.name] = '';
-    }
-    
-    // Handle special cases for common fields
-    if (options.isEmpty && column.name == 'status') {
-      options = ['New', 'In Progress', 'Completed', 'Cancelled'];
-    }
-    
-    // If required and no value selected yet, try to select the first valid option
-    if (isRequired && _dropdownValues[column.name]!.isEmpty && options.isNotEmpty) {
-      // Try to find first non-placeholder option or default to first
-      _dropdownValues[column.name] = options.firstWhere(
-        (opt) => !opt.startsWith('--'), 
-        orElse: () => options.first
-      );
-    }
-    
-    return DropdownButtonFormField<String>(
-      value: _dropdownValues[column.name]!.isEmpty ? null : _dropdownValues[column.name],
-      decoration: _inputDecoration(column.label, isRequired),
-      isExpanded: true,
-      icon: Icon(Icons.arrow_drop_down),
-      onChanged: (newValue) {
-        setState(() {
-          _dropdownValues[column.name] = newValue ?? '';
-        });
-      },
-      items: [
-        if (!isRequired)
-          DropdownMenuItem<String>(value: '', child: Text('-- Select ${column.label} --')),
-        ...options.map((option) => 
-          DropdownMenuItem<String>(
-            value: option,
-            child: Text(option, overflow: TextOverflow.ellipsis),
-          )
-        ),
-      ],
-      validator: isRequired ? (value) {
-        if (value == null || value.isEmpty) {
-          return 'Please select ${column.label}';
-        }
-        return null;
-      } : null,
+ Widget _buildDropdownField(ColumnInfo column, List<String> options, bool isRequired) {
+  // Initialize with empty string if not set yet
+  if (!_dropdownValues.containsKey(column.name)) {
+    _dropdownValues[column.name] = '';
+  }
+  
+  // Handle special cases for common fields
+  if (options.isEmpty && column.name == 'status') {
+    options = ['New', 'In Progress', 'Completed', 'Cancelled'];
+  }
+  
+  // If required and no value selected yet, try to select the first valid option
+  if (isRequired && _dropdownValues[column.name]!.isEmpty && options.isNotEmpty) {
+    // Try to find first non-placeholder option or default to first
+    _dropdownValues[column.name] = options.firstWhere(
+      (opt) => !opt.startsWith('--'), 
+      orElse: () => options.first
     );
   }
+  
+  return DropdownButtonFormField<String>(
+    value: _dropdownValues[column.name]!.isEmpty ? null : _dropdownValues[column.name],
+    decoration: _inputDecoration(column.label, isRequired).copyWith(
+      fillColor: AppColors.cardBackground,
+      filled: true,
+    ),
+    dropdownColor: AppColors.cardBackground, // Set dropdown menu background color
+    isExpanded: true,
+    icon: Icon(Icons.arrow_drop_down),
+    onChanged: (newValue) {
+      setState(() {
+        _dropdownValues[column.name] = newValue ?? '';
+      });
+    },
+    items: [
+      if (!isRequired)
+        DropdownMenuItem<String>(value: '', child: Text('-- Select ${column.label} --')),
+      ...options.map((option) => 
+        DropdownMenuItem<String>(
+          value: option,
+          child: Text(option, overflow: TextOverflow.ellipsis),
+        )
+      ),
+    ],
+    validator: isRequired ? (value) {
+      if (value == null || value.isEmpty) {
+        return 'Please select ${column.label}';
+      }
+      return null;
+    } : null,
+  );
+}
 
   // Helper methods
   InputDecoration _inputDecoration(String fieldLabel, bool isRequired) {
@@ -877,38 +925,9 @@ class _NewItemScreenState extends State<NewItemScreen> {
   }
 
   List<String> _parseDropdownValues(ColumnInfo column) {
-    // Your existing implementation
-    if (_dropdownOptionsCache.containsKey(column.name)) {
-      return _dropdownOptionsCache[column.name]!;
-    }
-
-    List<String> result = [];
-    if (column.values.isNotEmpty) {
-      try {
-        if (column.values.startsWith('[')) {
-          result = List<String>.from(json.decode(column.values));
-        } else {
-          if (column.values.contains(',')) {
-            result = column.values.split(',')
-                .map((e) => e.trim())
-                .where((e) => e.isNotEmpty)
-                .toList();
-          } else if (column.values.contains('\n')) {
-            result = column.values.split('\n')
-                .map((e) => e.trim()) 
-                .where((e) => e.isNotEmpty)
-                .toList();
-          } else {
-            result = [column.values.trim()];
-          }
-        }
-      } catch (e) {
-        print('Error parsing dropdown values for ${column.name}: $e');
-        return [];
-      }
-    }
-
-    return result;
+  
+  
+    return column.values;
   }
 }
 

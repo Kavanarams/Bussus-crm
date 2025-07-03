@@ -276,12 +276,12 @@ void _debugOriginalTaskDetails() {
 }
 
 // Replace the _saveTask method with this implementation
-// Replace the _saveTask method with this implementation
+// Updated _saveTask method with minimal data
 Future<void> _saveTask() async {
   // Debug the original task data first
   _debugOriginalTaskDetails();
 
-  // Check for required fields
+  // Check for required fields - we'll still validate but not send all fields
   setState(() {
     fieldErrors = {
       'subject': subjectController.text.isEmpty,
@@ -306,56 +306,44 @@ Future<void> _saveTask() async {
 
     if (token.isEmpty) {
       AppSnackBar.showError(context, 'Authentication required..please login');
+      setState(() {
+        _isSaving = false;
+      });
       return;
     }
 
-    // Find the selected user to get their email
-    final selectedUser = _users.firstWhere(
-      (user) => user['id'].toString() == selectedUserId,
-      orElse: () => {},
-    );
-    
-    final String assignedToName = selectedUser.isNotEmpty ? selectedUser['name'] : '';
-
-    // Create task data with only the fields we want to update
-    // CRITICAL FIX: Only send fields we're explicitly changing
+    // Create a MINIMAL task update - ONLY subject, status and due_date
+    // Completely exclude any reference to the assigned user for now
     final taskData = {
-      'id': widget.taskId, // Include the task ID
+      'id': widget.taskId,
       'subject': subjectController.text,
-      'due_date': dueDateController.text,
-      'assigned_to': assignedToName,
-      'user_id': int.tryParse(selectedUserId ?? '') ?? 0,
       'status': selectedStatus,
+      'due_date': dueDateController.text,
+      // Exclude assigned user completely for this test
     };
     
-    // CRITICAL FIX: Only include these fields if they exist in the original task
-    // AND we're not trying to change them
-    if (widget.taskDetails['related_to_id'] != null) {
-      taskData['related_to_id'] = widget.taskDetails['related_to_id'];
+    // Only include related_to_object_id if it exists in the original task
+    if (widget.taskDetails['related_to_object_id'] != null) {
+      taskData['related_to_object_id'] = widget.taskDetails['related_to_object_id'];
     }
     
-    if (widget.taskDetails['related_to'] != null) {
-      taskData['related_to'] = widget.taskDetails['related_to'];
-    }
-    
-    // Only update description if it was originally present
-    if (widget.taskDetails.containsKey('description')) {
-      taskData['description'] = descriptionController.text;
-    }
-
-    // Debug the task data we're about to send
-    print('🔄 Task Update Data:');
+    print('🔄 Minimal Task Update Data:');
     print('🆔 Task ID: ${widget.taskId}');
-    print('👤 Selected User ID: $selectedUserId');
-    print('📝 User Name: $assignedToName');
-    print('📎 related_to_id: ${taskData['related_to_id']}');
-    print('📎 related_to: ${taskData['related_to']}');
     print('🔄 Full Data: $taskData');
 
     // Use dataProvider to update the task
-    final result = await dataProvider.updateTask(widget.taskId, taskData, token);
+    final result = await dataProvider.updateMinimalTask(widget.taskId, taskData, token);
 
     if (result['success']) {
+      // If minimal update works, we can try adding the user assignment in a separate call
+      final bool shouldUpdateUser = selectedUserId != null && 
+          (widget.taskDetails['assigned_to_id'] != selectedUserId);
+          
+      if (shouldUpdateUser) {
+        print('✅ Basic update successful! Now trying to update assigned user separately...');
+        await _updateAssignedUserSeparately(widget.taskId, selectedUserId!, token, dataProvider);
+      }
+      
       AppSnackBar.showSuccess(context, 'Task updated successfully');
       Navigator.pop(context, true);
     } else {
@@ -363,11 +351,62 @@ Future<void> _saveTask() async {
       AppSnackBar.showError(context, errorMessage);
     }
   } catch (e) {
-    AppSnackBar.showError(context, 'error updating task');
+    print('❌ Error in _saveTask: $e');
+    AppSnackBar.showError(context, 'Error updating task: $e');
   } finally {
     setState(() {
       _isSaving = false;
     });
+  }
+}
+
+// New method to update just the assigned user in a separate API call
+Future<void> _updateAssignedUserSeparately(
+  String taskId, 
+  String userId, 
+  String token,
+  DataProvider dataProvider
+) async {
+  try {
+    // Try different field names that the API might accept
+    final possibleFieldNames = [
+      'user_id',
+      'assigned_user_id',
+      'assignee_id',
+      'owner_id'
+    ];
+    
+    bool updated = false;
+    String lastError = '';
+    
+    // Try each field name until one works
+    for (final fieldName in possibleFieldNames) {
+      if (updated) break;
+      
+      print('🧪 Attempting to update user with field: $fieldName = $userId');
+      
+      final userData = {
+        'id': taskId,
+        fieldName: userId,
+      };
+      
+      final result = await dataProvider.updateMinimalTask(taskId, userData, token);
+      
+      if (result['success']) {
+        print('✅ Successfully updated user with field: $fieldName');
+        updated = true;
+      } else {
+        lastError = result['error'] ?? 'Unknown error';
+        print('❌ Failed with field $fieldName: $lastError');
+      }
+    }
+    
+    if (!updated) {
+      print('⚠️ Could not update assigned user after trying all field names');
+      print('⚠️ Last error: $lastError');
+    }
+  } catch (e) {
+    print('❌ Error in _updateAssignedUserSeparately: $e');
   }
 }
   Widget buildFormField({

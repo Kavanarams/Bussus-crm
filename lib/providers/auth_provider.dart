@@ -24,38 +24,29 @@ class AuthProvider with ChangeNotifier {
   // Add this getter for isInitialized
   bool get isInitialized => _isInitialized;
 
-  // Initialize auth state from storage with token validation
+  // Initialize auth state from storage - no automatic token validation
   Future<void> tryAutoLogin() async {
     final storedToken = await _storage.read(key: 'auth_token');
     final storedUserData = await _storage.read(key: 'user_data');
 
     if (storedToken != null && storedToken.isNotEmpty) {
-      // Validate the token before considering the user authenticated
-      final isValid = await validateToken(storedToken);
-
-      if (isValid) {
-        _token = storedToken;
-        
-        // Restore user data if available
-        if (storedUserData != null && storedUserData.isNotEmpty) {
-          try {
-            final userData = json.decode(storedUserData);
-            _user = User.fromJson(userData);
-          } catch (e) {
-            print('Error parsing stored user data: $e');
-          }
+      _token = storedToken;
+      
+      // Restore user data if available
+      if (storedUserData != null && storedUserData.isNotEmpty) {
+        try {
+          final userData = json.decode(storedUserData);
+          _user = User.fromJson(userData);
+        } catch (e) {
+          print('Error parsing stored user data: $e');
         }
-        
-        _isInitialized = true;
-        notifyListeners();
-      } else {
-        // Token is invalid, clear it
-        await logout();
       }
-    } else {
-      _isInitialized = true;
-      notifyListeners();
+      
+      print('🔐 Auto-login successful with stored token');
     }
+    
+    _isInitialized = true;
+    notifyListeners();
   }
 
   // Validate token by making a test request
@@ -75,6 +66,12 @@ class AuthProvider with ChangeNotifier {
       print('🔐 Token validation error: $e');
       return false;
     }
+  }
+
+  // Optional: Method to manually validate current token if needed
+  Future<bool> validateCurrentToken() async {
+    if (_token == null || _token!.isEmpty) return false;
+    return await validateToken(_token!);
   }
 
   Future<bool> login(String username, String password) async {
@@ -184,8 +181,19 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  // Updated logout method to call the API endpoint
-  Future<void> logout() async {
+  // Private method to clear local data only
+  Future<void> _clearLocalData() async {
+    _token = null;
+    _user = User.empty();
+    await _storage.delete(key: 'auth_token');
+    await _storage.delete(key: 'user_data');
+    _isInitialized = true;
+    notifyListeners();
+    print('🔐 Local data cleared');
+  }
+
+  // Updated logout method - only calls API, no local logout
+  Future<bool> logout() async {
     try {
       // Only call the API if we have a valid token
       if (_token != null && _token!.isNotEmpty) {
@@ -201,19 +209,24 @@ class AuthProvider with ChangeNotifier {
         );
         
         print('🔐 Logout API response: ${response.statusCode}');
+        
+        // Return success status based on API response
+        return response.statusCode == 200;
       }
+      
+      // No token to logout with
+      return false;
     } catch (e) {
       print('🔐 Error during API logout: $e');
-      // Continue with local logout even if API call fails
-    } finally {
-      // Clear local storage and state regardless of API call success
-      _token = null;
-      _user = User.empty();
-      await _storage.delete(key: 'auth_token');
-      await _storage.delete(key: 'user_data');
-      _isInitialized = true;
-      notifyListeners();
-      print('🔐 Local logout completed');
+      return false;
     }
+    // Note: Local data is NOT cleared - only remote logout is performed
+  }
+
+  // Optional: Add a method for force logout (clears local data)
+  // This can be called if you need to clear local session for any reason
+  Future<void> forceLogout() async {
+    await _clearLocalData();
+    print('🔐 Force logout completed - local data cleared');
   }
 }

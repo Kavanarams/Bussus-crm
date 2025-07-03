@@ -4,7 +4,7 @@ import '../models/dashboard_item.dart';
 import '../providers/auth_provider.dart';
 
 class DashboardService {
-  final String apiUrl = 'https://qa.api.bussus.com/v2/api/setup/dashboard';
+  final String apiUrl = 'https://dev.api.bussus.com/v2/api/setup/dashboard';
   final AuthProvider authProvider;
 
   DashboardService({required this.authProvider});
