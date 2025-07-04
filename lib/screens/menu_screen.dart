@@ -3,9 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/tab_item.dart';
-import '../models/apps.dart';
 import 'home_screen.dart';
-import '../providers/tabs_provider.dart';
 
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});

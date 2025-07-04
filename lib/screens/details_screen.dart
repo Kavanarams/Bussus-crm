@@ -15,7 +15,6 @@ import 'dart:io' show File;
 import 'task_detail_screen.dart';
 import '../theme/app_snackbar.dart';
 import 'home_screen.dart';
-import 'AllFilesPage.dart';
 
 
 class DetailsScreen extends StatefulWidget {
